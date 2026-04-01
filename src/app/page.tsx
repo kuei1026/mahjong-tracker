@@ -51,32 +51,32 @@ export default function HomePage() {
     const trimmedOwnerName = ownerName.trim();
 
     if (!trimmedOwnerName) {
-      setMessage('Please enter the owner name.');
+      setMessage('請輸入房主名稱。');
       return;
     }
 
     if (playerNames.some((name) => !name)) {
-      setMessage('Please enter all 4 player names.');
+      setMessage('請完整輸入 4 位玩家名稱。');
       return;
     }
 
     if (new Set(playerNames).size !== 4) {
-      setMessage('Player names must be unique.');
+      setMessage('4 位玩家名稱不能重複。');
       return;
     }
 
     if (!playerNames.includes(trimmedOwnerName)) {
-      setMessage('Owner name must match one of the 4 player names.');
+      setMessage('房主名稱必須和其中一位玩家名稱一致。');
       return;
     }
 
     if (taiUnitAmount <= 0) {
-      setMessage('Tai unit amount must be greater than 0.');
+      setMessage('每台金額必須大於 0。');
       return;
     }
 
     if (misdealPenalty < 0) {
-      setMessage('Misdeal penalty cannot be negative.');
+      setMessage('相公罰分不能小於 0。');
       return;
     }
 
@@ -112,7 +112,7 @@ export default function HomePage() {
       }
 
       if (!roomId) {
-        throw new Error('Failed to create room after multiple attempts.');
+        throw new Error('建立房間失敗。');
       }
 
       const playersPayload = playerNames.map((name, index) => ({
@@ -134,7 +134,7 @@ export default function HomePage() {
       router.push(`/room/${roomId}`);
     } catch (error) {
       console.error('Create room failed:', error);
-      setMessage('Failed to create room. Please try again.');
+      setMessage('建立房間失敗，請稍後再試。');
     } finally {
       setCreateLoading(false);
     }
@@ -148,12 +148,12 @@ export default function HomePage() {
     const trimmedJoinUserName = joinUserName.trim();
 
     if (!roomCode) {
-      setMessage('Please enter a room code.');
+      setMessage('請輸入房號。');
       return;
     }
 
     if (!trimmedJoinUserName) {
-      setMessage('Please enter your name.');
+      setMessage('請輸入你的名稱。');
       return;
     }
 
@@ -167,12 +167,12 @@ export default function HomePage() {
         .single();
 
       if (roomError || !roomData) {
-        setMessage('Room not found.');
+        setMessage('找不到此房間。');
         return;
       }
 
       if (roomData.status !== 'active') {
-        setMessage('This room is not active.');
+        setMessage('此房間目前不是進行中狀態。');
         return;
       }
 
@@ -180,25 +180,79 @@ export default function HomePage() {
       router.push(`/room/${roomData.id}`);
     } catch (error) {
       console.error('Join room failed:', error);
-      setMessage('Failed to join room. Please try again.');
+      setMessage('加入房間失敗，請稍後再試。');
     } finally {
       setJoinLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#1B1B1B] px-6 py-10 text-white">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8">
-        <div className="space-y-3">
-          <p className="text-sm uppercase tracking-[0.2em] text-neutral-400">
-            Mahjong Tracker
-          </p>
-          <h1 className="text-4xl font-bold">Create or Join a Room</h1>
-          <p className="max-w-2xl text-neutral-400">
-            Start with the MVP flow first: create a room, add four players, and
-            sync score updates in real time.
-          </p>
-        </div>
+    <main className="min-h-screen bg-[#1B1B1B] px-4 py-6 text-white sm:px-6 sm:py-10">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8">
+        <section className="overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-white/8 to-white/4 shadow-[0_20px_70px_rgba(0,0,0,0.32)] backdrop-blur">
+          <div className="grid gap-8 p-6 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
+            <div className="space-y-5">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.28em] text-neutral-500">
+                  Mahjong Tracker
+                </p>
+                <h1 className="text-4xl font-bold leading-tight sm:text-5xl">
+                  🀄 麻將對局紀錄工具
+                </h1>
+                <p className="max-w-2xl text-sm leading-7 text-neutral-400 sm:text-base">
+                  用最不打斷牌局節奏的方式，快速紀錄每一手輸贏、同步比分、查看分數走勢與牌局數據。
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">
+                    即時同步
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    Supabase Realtime
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">
+                    核心定位
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    數據極簡風
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">
+                    目前版本
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-white">
+                    MVP v1.0
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-black/20 p-5">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">
+                    特色亮點
+                  </p>
+                  <h2 className="mt-2 text-2xl font-bold">快速記錄，不破壞節奏</h2>
+                </div>
+
+                <div className="space-y-3 text-sm leading-7 text-neutral-400">
+                  <p>• 房主一人紀錄，全員畫面即時同步</p>
+                  <p>• 自摸 / 胡牌 / 流局 / 相公快速輸入</p>
+                  <p>• 分數走勢圖與對局數據分析</p>
+                  <p>• 胡牌張紀錄，逐步朝麻將數據產品靠近</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {message ? (
           <div className="rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
@@ -206,73 +260,71 @@ export default function HomePage() {
           </div>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+        <div className="grid gap-6 xl:grid-cols-2">
+          <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
             <div className="mb-6">
-              <h2 className="text-2xl font-semibold">Create Room</h2>
+              <h2 className="text-2xl font-semibold">建立房間</h2>
               <p className="mt-2 text-sm text-neutral-400">
-                Set up a new room with four players and basic scoring rules.
+                先設定 4 位玩家與基本規則，快速開始一場牌局。
               </p>
             </div>
 
             <form className="space-y-4" onSubmit={handleCreateRoom}>
               <div className="space-y-2">
-                <label className="text-sm text-neutral-300">Owner Name</label>
+                <label className="text-sm text-neutral-300">房主名稱</label>
                 <input
                   className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
-                  placeholder="Enter owner name"
+                  placeholder="例如：阿傑"
                 />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm text-neutral-300">Player 1</label>
+                  <label className="text-sm text-neutral-300">玩家 1</label>
                   <input
                     className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
                     value={player1}
                     onChange={(e) => setPlayer1(e.target.value)}
-                    placeholder="Player 1"
+                    placeholder="輸入名稱"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-neutral-300">Player 2</label>
+                  <label className="text-sm text-neutral-300">玩家 2</label>
                   <input
                     className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
                     value={player2}
                     onChange={(e) => setPlayer2(e.target.value)}
-                    placeholder="Player 2"
+                    placeholder="輸入名稱"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-neutral-300">Player 3</label>
+                  <label className="text-sm text-neutral-300">玩家 3</label>
                   <input
                     className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
                     value={player3}
                     onChange={(e) => setPlayer3(e.target.value)}
-                    placeholder="Player 3"
+                    placeholder="輸入名稱"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-neutral-300">Player 4</label>
+                  <label className="text-sm text-neutral-300">玩家 4</label>
                   <input
                     className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
                     value={player4}
                     onChange={(e) => setPlayer4(e.target.value)}
-                    placeholder="Player 4"
+                    placeholder="輸入名稱"
                   />
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm text-neutral-300">
-                    Tai Unit Amount
-                  </label>
+                  <label className="text-sm text-neutral-300">每台金額</label>
                   <input
                     type="number"
                     min={1}
@@ -283,9 +335,7 @@ export default function HomePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm text-neutral-300">
-                    Misdeal Penalty
-                  </label>
+                  <label className="text-sm text-neutral-300">相公罰分</label>
                   <input
                     type="number"
                     min={0}
@@ -299,56 +349,55 @@ export default function HomePage() {
               <button
                 type="submit"
                 disabled={createLoading}
-                className="w-full rounded-2xl bg-[#B6FF00] px-4 py-3 font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-2xl bg-[#B6FF00] px-4 py-4 font-semibold text-black transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {createLoading ? 'Creating Room...' : 'Create Room'}
+                {createLoading ? '建立中...' : '建立房間'}
               </button>
             </form>
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+          <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
             <div className="mb-6">
-              <h2 className="text-2xl font-semibold">Join Room</h2>
+              <h2 className="text-2xl font-semibold">加入房間</h2>
               <p className="mt-2 text-sm text-neutral-400">
-                Enter a room code and your name to enter the room.
+                輸入房號與你的名稱，直接進入已建立的對局。
               </p>
             </div>
 
             <form className="space-y-4" onSubmit={handleJoinRoom}>
               <div className="space-y-2">
-                <label className="text-sm text-neutral-300">Room Code</label>
+                <label className="text-sm text-neutral-300">房號</label>
                 <input
                   className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 uppercase outline-none transition focus:border-lime-400"
                   value={joinRoomCode}
                   onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase())}
-                  placeholder="Enter room code"
+                  placeholder="輸入房號"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm text-neutral-300">Your Name</label>
+                <label className="text-sm text-neutral-300">你的名稱</label>
                 <input
                   className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
                   value={joinUserName}
                   onChange={(e) => setJoinUserName(e.target.value)}
-                  placeholder="Enter your name"
+                  placeholder="例如：小白"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={joinLoading}
-                className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-3 font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-4 font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {joinLoading ? 'Joining Room...' : 'Join Room'}
+                {joinLoading ? '加入中...' : '加入房間'}
               </button>
             </form>
 
             <div className="mt-8 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-neutral-400">
-              <p className="font-medium text-white">Current MVP Scope</p>
-              <p className="mt-2">
-                Build room, join room, owner records, and four-player synced
-                score display first. Skip auth and advanced analytics for now.
+              <p className="font-medium text-white">目前版本功能</p>
+              <p className="mt-2 leading-7">
+                建房、加房、房主紀錄、即時比分同步、分數走勢圖、對局紀錄、KPI 分析與稱號系統。
               </p>
             </div>
           </section>

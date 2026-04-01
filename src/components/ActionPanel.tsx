@@ -13,10 +13,10 @@ interface ActionPanelProps {
 }
 
 const RESULT_OPTIONS: { label: string; value: RecordType }[] = [
-  { label: 'Tsumo', value: 'tsumo' },
-  { label: 'Ron', value: 'ron' },
-  { label: 'Draw', value: 'draw' },
-  { label: 'Misdeal', value: 'misdeal' },
+  { label: '自摸', value: 'tsumo' },
+  { label: '胡牌', value: 'ron' },
+  { label: '流局', value: 'draw' },
+  { label: '相公', value: 'misdeal' },
 ];
 
 const QUICK_TAI_OPTIONS = [1, 2, 3, 4, 5];
@@ -127,21 +127,21 @@ export default function ActionPanel({
 
   const validateForm = () => {
     if (requiresWinner && winnerSeat === null) {
-      return 'Please select a winner.';
+      return '請先選擇贏家。';
     }
 
     if (requiresLoser && loserSeat === null) {
       return resultType === 'misdeal'
-        ? 'Please select the misdeal player.'
-        : 'Please select a loser.';
+        ? '請先選擇相公玩家。'
+        : '請先選擇放槍玩家。';
     }
 
     if (resultType === 'ron' && winnerSeat === loserSeat) {
-      return 'Winner and loser cannot be the same player.';
+      return '贏家與放槍玩家不能是同一位。';
     }
 
     if (requiresTaiCount && taiCount <= 0) {
-      return 'Tai count must be greater than 0.';
+      return '台數必須大於 0。';
     }
 
     return '';
@@ -174,7 +174,7 @@ export default function ActionPanel({
         .single();
 
       if (handError || !handData) {
-        throw handError ?? new Error('Failed to create hand.');
+        throw handError ?? new Error('建立手牌紀錄失敗。');
       }
 
       const calculatedScoreChanges = calculateScoreChanges({
@@ -229,7 +229,7 @@ export default function ActionPanel({
       }
 
       resetForm();
-      showSuccess('Record saved successfully.');
+      showSuccess('此手紀錄成功。');
       await onRecorded();
 
       requestAnimationFrame(() => {
@@ -241,7 +241,7 @@ export default function ActionPanel({
       });
     } catch (error) {
       console.error('Record hand failed:', error);
-      showError('Failed to save record. Please try again.');
+      showError('紀錄失敗，請稍後再試。');
     } finally {
       setLoading(false);
     }
@@ -281,7 +281,7 @@ export default function ActionPanel({
                 } ${isDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
               >
                 <div className="text-xs uppercase tracking-wide text-neutral-400">
-                  Seat {player.seat_index + 1}
+                  第 {player.seat_index + 1} 位
                 </div>
                 <div className="mt-1 text-base font-semibold">
                   {player.player_name}
@@ -297,7 +297,7 @@ export default function ActionPanel({
   return (
     <section
       ref={panelRef}
-      className={`rounded-3xl border p-6 shadow-lg backdrop-blur transition ${
+      className={`rounded-[28px] border p-6 shadow-lg backdrop-blur transition ${
         recentlySaved
           ? 'border-[#B6FF00]/60 bg-[#B6FF00]/10'
           : 'border-white/10 bg-white/5'
@@ -306,14 +306,14 @@ export default function ActionPanel({
       <div className="mb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Owner Action Panel</h2>
+            <h2 className="text-2xl font-semibold">⚡ 對局紀錄</h2>
             <p className="mt-2 text-sm text-neutral-400">
-              Fast hand entry for live gameplay.
+              用最快的方式記下這一手的結果。
             </p>
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-neutral-300">
-            Hand #{room.current_hand_no + 1}
+            即將紀錄：第 {room.current_hand_no + 1} 手
           </div>
         </div>
       </div>
@@ -332,7 +332,7 @@ export default function ActionPanel({
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-2">
-          <label className="text-sm text-neutral-300">Result Type</label>
+          <label className="text-sm text-neutral-300">結果類型</label>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {RESULT_OPTIONS.map((option) => {
               const isActive = resultType === option.value;
@@ -361,7 +361,7 @@ export default function ActionPanel({
               selectedSeat: winnerSeat,
               onSelect: setWinnerSeat,
               disabledSeat: resultType === 'ron' ? loserSeat : null,
-              title: 'Winner',
+              title: '贏家',
               accentClass: 'bg-[#B6FF00] text-black',
             })
           : null}
@@ -371,14 +371,14 @@ export default function ActionPanel({
               selectedSeat: loserSeat,
               onSelect: setLoserSeat,
               disabledSeat: resultType === 'ron' ? winnerSeat : null,
-              title: resultType === 'misdeal' ? 'Misdeal Player' : 'Loser',
+              title: resultType === 'misdeal' ? '相公玩家' : '放槍玩家',
               accentClass: 'bg-[#FF5F5F] text-white',
             })
           : null}
 
         {requiresTaiCount ? (
           <div className="space-y-3">
-            <label className="text-sm text-neutral-300">Tai Count</label>
+            <label className="text-sm text-neutral-300">台數</label>
 
             <div className="grid grid-cols-5 gap-2">
               {QUICK_TAI_OPTIONS.map((value) => {
@@ -439,12 +439,12 @@ export default function ActionPanel({
         ) : null}
 
         <div className="space-y-2">
-          <label className="text-sm text-neutral-300">Note (Optional)</label>
+          <label className="text-sm text-neutral-300">備註（可不填）</label>
           <textarea
             className="min-h-[88px] w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a short note for this hand"
+            placeholder="例如：過水後改張、關鍵一手、特殊情況..."
           />
         </div>
 
@@ -458,7 +458,7 @@ export default function ActionPanel({
               : 'bg-[#B6FF00] text-black shadow-[0_8px_30px_rgba(182,255,0,0.22)] hover:opacity-95'
           }`}
         >
-          {loading ? 'Saving Record...' : 'Save Record'}
+          {loading ? '紀錄中...' : '紀錄此手'}
         </button>
       </form>
     </section>
