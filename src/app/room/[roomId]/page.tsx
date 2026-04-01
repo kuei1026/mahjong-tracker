@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import type { Room, RoomPlayer, ScoreChange } from '@/types/game';
+import type { RecordItem, Room, RoomPlayer, ScoreChange } from '@/types/game';
 import ActionPanel from '@/components/ActionPanel';
+import HandHistory from '@/components/HandHistory';
 
 type PlayerWithScore = RoomPlayer & {
   totalScore: number;
@@ -16,6 +17,7 @@ export default function RoomPage() {
 
   const [room, setRoom] = useState<Room | null>(null);
   const [players, setPlayers] = useState<RoomPlayer[]>([]);
+  const [records, setRecords] = useState<RecordItem[]>([]);
   const [scoreChanges, setScoreChanges] = useState<ScoreChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -26,13 +28,18 @@ export default function RoomPage() {
     console.log('[fetchRoomData] start:', roomId);
 
     try {
-      const [roomRes, playersRes, scoreChangesRes] = await Promise.all([
+      const [roomRes, playersRes, recordsRes, scoreChangesRes] = await Promise.all([
         supabase.from('rooms').select('*').eq('id', roomId).single(),
         supabase
           .from('room_players')
           .select('*')
           .eq('room_id', roomId)
           .order('seat_index', { ascending: true }),
+        supabase
+          .from('records')
+          .select('*')
+          .eq('room_id', roomId)
+          .order('created_at', { ascending: true }),
         supabase
           .from('score_changes')
           .select('*')
@@ -48,6 +55,10 @@ export default function RoomPage() {
         throw playersRes.error;
       }
 
+      if (recordsRes.error) {
+        throw recordsRes.error;
+      }
+
       if (scoreChangesRes.error) {
         throw scoreChangesRes.error;
       }
@@ -55,11 +66,13 @@ export default function RoomPage() {
       console.log('[fetchRoomData] success:', {
         room: roomRes.data,
         playersCount: playersRes.data?.length ?? 0,
+        recordsCount: recordsRes.data?.length ?? 0,
         scoreChangesCount: scoreChangesRes.data?.length ?? 0,
       });
 
       setRoom(roomRes.data);
       setPlayers(playersRes.data ?? []);
+      setRecords(recordsRes.data ?? []);
       setScoreChanges(scoreChangesRes.data ?? []);
       setErrorMessage('');
     } catch (error) {
@@ -92,6 +105,20 @@ export default function RoomPage() {
       },
       async (payload) => {
         console.log('[Realtime] score_changes INSERT:', payload);
+        await fetchRoomData();
+      }
+    );
+
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'records',
+        filter: `room_id=eq.${roomId}`,
+      },
+      async (payload) => {
+        console.log('[Realtime] records INSERT:', payload);
         await fetchRoomData();
       }
     );
@@ -263,6 +290,8 @@ export default function RoomPage() {
             </section>
 
             <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
+
+            <HandHistory records={records} players={players} />
           </div>
 
           <div className="flex flex-col gap-6">
@@ -282,6 +311,11 @@ export default function RoomPage() {
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
                   <span className="text-neutral-400">Total Score Events</span>
                   <span className="font-medium text-white">{scoreChanges.length}</span>
+                </div>
+
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <span className="text-neutral-400">Total Records</span>
+                  <span className="font-medium text-white">{records.length}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
