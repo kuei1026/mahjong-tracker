@@ -4,6 +4,8 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
+
 function generateRoomCode(length = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let result = '';
@@ -25,7 +27,9 @@ export default function HomePage() {
   const [player4, setPlayer4] = useState('');
   const [taiUnitAmount, setTaiUnitAmount] = useState(10);
   const [misdealPenalty, setMisdealPenalty] = useState(20);
+
   const [joinRoomCode, setJoinRoomCode] = useState('');
+  const [joinUserName, setJoinUserName] = useState('');
 
   const [createLoading, setCreateLoading] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
@@ -35,6 +39,10 @@ export default function HomePage() {
     () => [player1.trim(), player2.trim(), player3.trim(), player4.trim()],
     [player1, player2, player3, player4]
   );
+
+  const saveUserNameToLocalStorage = (name: string) => {
+    localStorage.setItem(LOCAL_STORAGE_USER_NAME_KEY, name.trim());
+  };
 
   const handleCreateRoom = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -54,6 +62,11 @@ export default function HomePage() {
 
     if (new Set(playerNames).size !== 4) {
       setMessage('Player names must be unique.');
+      return;
+    }
+
+    if (!playerNames.includes(trimmedOwnerName)) {
+      setMessage('Owner name must match one of the 4 player names.');
       return;
     }
 
@@ -117,6 +130,7 @@ export default function HomePage() {
         throw playersError;
       }
 
+      saveUserNameToLocalStorage(trimmedOwnerName);
       router.push(`/room/${roomId}`);
     } catch (error) {
       console.error('Create room failed:', error);
@@ -131,9 +145,15 @@ export default function HomePage() {
     setMessage('');
 
     const roomCode = joinRoomCode.trim().toUpperCase();
+    const trimmedJoinUserName = joinUserName.trim();
 
     if (!roomCode) {
       setMessage('Please enter a room code.');
+      return;
+    }
+
+    if (!trimmedJoinUserName) {
+      setMessage('Please enter your name.');
       return;
     }
 
@@ -156,6 +176,7 @@ export default function HomePage() {
         return;
       }
 
+      saveUserNameToLocalStorage(trimmedJoinUserName);
       router.push(`/room/${roomData.id}`);
     } catch (error) {
       console.error('Join room failed:', error);
@@ -289,7 +310,7 @@ export default function HomePage() {
             <div className="mb-6">
               <h2 className="text-2xl font-semibold">Join Room</h2>
               <p className="mt-2 text-sm text-neutral-400">
-                Enter a room code and go straight into the game room.
+                Enter a room code and your name to enter the room.
               </p>
             </div>
 
@@ -301,6 +322,16 @@ export default function HomePage() {
                   value={joinRoomCode}
                   onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase())}
                   placeholder="Enter room code"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-neutral-300">Your Name</label>
+                <input
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
+                  value={joinUserName}
+                  onChange={(e) => setJoinUserName(e.target.value)}
+                  placeholder="Enter your name"
                 />
               </div>
 

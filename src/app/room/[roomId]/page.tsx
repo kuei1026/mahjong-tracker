@@ -7,6 +7,8 @@ import type { RecordItem, Room, RoomPlayer, ScoreChange } from '@/types/game';
 import ActionPanel from '@/components/ActionPanel';
 import HandHistory from '@/components/HandHistory';
 
+const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
+
 type PlayerWithScore = RoomPlayer & {
   totalScore: number;
 };
@@ -19,6 +21,7 @@ export default function RoomPage() {
   const [players, setPlayers] = useState<RoomPlayer[]>([]);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [scoreChanges, setScoreChanges] = useState<ScoreChange[]>([]);
+  const [currentUserName, setCurrentUserName] = useState('');
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -82,6 +85,12 @@ export default function RoomPage() {
       setLoading(false);
     }
   }, [roomId]);
+
+  useEffect(() => {
+    const savedUserName =
+      localStorage.getItem(LOCAL_STORAGE_USER_NAME_KEY) ?? '';
+    setCurrentUserName(savedUserName);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -163,6 +172,12 @@ export default function RoomPage() {
       .sort((a, b) => b.totalScore - a.totalScore);
   }, [players, scoreChanges]);
 
+  const isOwner = useMemo(() => {
+    if (!room || !currentUserName) return false;
+
+    return room.owner_name.trim().toLowerCase() === currentUserName.trim().toLowerCase();
+  }, [room, currentUserName]);
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#1B1B1B] px-6 py-10 text-white">
@@ -199,6 +214,12 @@ export default function RoomPage() {
               <h1 className="text-4xl font-bold">Room {room.room_code}</h1>
               <p className="text-neutral-400">
                 Owner: <span className="text-white">{room.owner_name}</span>
+              </p>
+              <p className="text-sm text-neutral-500">
+                Current User:{' '}
+                <span className="text-white">
+                  {currentUserName || 'Unknown User'}
+                </span>
               </p>
             </div>
 
@@ -289,7 +310,16 @@ export default function RoomPage() {
               </div>
             </section>
 
-            <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
+            {isOwner ? (
+              <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
+            ) : (
+              <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+                <h2 className="text-2xl font-semibold">View Only</h2>
+                <p className="mt-3 text-sm leading-7 text-neutral-400">
+                  Only the room owner can record hand results in this version.
+                </p>
+              </section>
+            )}
 
             <HandHistory records={records} players={players} />
           </div>
@@ -316,6 +346,13 @@ export default function RoomPage() {
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
                   <span className="text-neutral-400">Total Records</span>
                   <span className="font-medium text-white">{records.length}</span>
+                </div>
+
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <span className="text-neutral-400">Permission</span>
+                  <span className="font-medium text-white">
+                    {isOwner ? 'Owner' : 'Viewer'}
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between">
