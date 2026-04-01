@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { calculateScoreChanges, type RecordType } from '@/lib/gameLogic';
 import type { Room, RoomPlayer } from '@/types/game';
@@ -31,7 +31,13 @@ export default function ActionPanel({
   const [taiCount, setTaiCount] = useState(1);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackType, setFeedbackType] = useState<'success' | 'error' | ''>('');
+  const [recentlySaved, setRecentlySaved] = useState(false);
+
+  const panelRef = useRef<HTMLElement | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const sortedPlayers = useMemo(
     () => [...players].sort((a, b) => a.seat_index - b.seat_index),
@@ -42,6 +48,33 @@ export default function ActionPanel({
   const requiresLoser = resultType === 'ron' || resultType === 'misdeal';
   const requiresTaiCount = resultType === 'tsumo' || resultType === 'ron';
 
+  useEffect(() => {
+    if (!feedbackMessage) return;
+
+    const timer = window.setTimeout(() => {
+      setFeedbackMessage('');
+      setFeedbackType('');
+    }, 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [feedbackMessage]);
+
+  useEffect(() => {
+    if (!recentlySaved) return;
+
+    const timer = window.setTimeout(() => {
+      setRecentlySaved(false);
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [recentlySaved]);
+
+  const triggerHapticFeedback = (pattern: number | number[]) => {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(pattern);
+    }
+  };
+
   const resetForm = () => {
     setResultType('tsumo');
     setWinnerSeat(null);
@@ -50,9 +83,23 @@ export default function ActionPanel({
     setNote('');
   };
 
+  const showError = (message: string) => {
+    setFeedbackType('error');
+    setFeedbackMessage(message);
+    triggerHapticFeedback([80, 40, 80]);
+  };
+
+  const showSuccess = (message: string) => {
+    setFeedbackType('success');
+    setFeedbackMessage(message);
+    setRecentlySaved(true);
+    triggerHapticFeedback(60);
+  };
+
   const handleResultTypeChange = (nextType: RecordType) => {
     setResultType(nextType);
-    setMessage('');
+    setFeedbackMessage('');
+    setFeedbackType('');
 
     if (nextType === 'draw') {
       setWinnerSeat(null);
@@ -96,11 +143,12 @@ export default function ActionPanel({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setMessage('');
+    setFeedbackMessage('');
+    setFeedbackType('');
 
     const validationMessage = validateForm();
     if (validationMessage) {
-      setMessage(validationMessage);
+      showError(validationMessage);
       return;
     }
 
@@ -174,11 +222,19 @@ export default function ActionPanel({
       }
 
       resetForm();
-      setMessage('Record saved successfully.');
+      showSuccess('Record saved successfully.');
       await onRecorded();
+
+      requestAnimationFrame(() => {
+        panelRef.current?.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth',
+        });
+        saveButtonRef.current?.focus();
+      });
     } catch (error) {
       console.error('Record hand failed:', error);
-      setMessage('Failed to save record. Please try again.');
+      showError('Failed to save record. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -210,10 +266,10 @@ export default function ActionPanel({
                 key={player.id}
                 type="button"
                 onClick={() => onSelect(player.seat_index)}
-                disabled={isDisabled}
-                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                disabled={isDisabled || loading}
+                className={`min-h-[76px] rounded-2xl border px-4 py-3 text-left transition active:scale-[0.98] ${
                   isSelected
-                    ? `${accentClass} border-transparent`
+                    ? `${accentClass} border-transparent shadow-lg`
                     : 'border-white/10 bg-black/20 text-white hover:border-white/20'
                 } ${isDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
               >
@@ -232,24 +288,45 @@ export default function ActionPanel({
   };
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+    <section
+      ref={panelRef}
+      className={`rounded-3xl border p-6 shadow-lg backdrop-blur transition ${
+        recentlySaved
+          ? 'border-[#B6FF00]/60 bg-[#B6FF00]/10'
+          : 'border-white/10 bg-white/5'
+      }`}
+    >
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold">Owner Action Panel</h2>
-        <p className="mt-2 text-sm text-neutral-400">
-          Record one hand result quickly and update room scores instantly.
-        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold">Owner Action Panel</h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              Fast hand entry for live gameplay.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-neutral-300">
+            Hand #{room.current_hand_no + 1}
+          </div>
+        </div>
       </div>
 
-      {message ? (
-        <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-neutral-200">
-          {message}
+      {feedbackMessage ? (
+        <div
+          className={`mb-4 rounded-2xl px-4 py-3 text-sm font-medium ${
+            feedbackType === 'success'
+              ? 'border border-[#B6FF00]/30 bg-[#B6FF00]/10 text-[#D9FF7A]'
+              : 'border border-red-400/30 bg-red-400/10 text-red-200'
+          }`}
+        >
+          {feedbackMessage}
         </div>
       ) : null}
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-2">
           <label className="text-sm text-neutral-300">Result Type</label>
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {RESULT_OPTIONS.map((option) => {
               const isActive = resultType === option.value;
 
@@ -258,9 +335,10 @@ export default function ActionPanel({
                   key={option.value}
                   type="button"
                   onClick={() => handleResultTypeChange(option.value)}
-                  className={`rounded-2xl border px-4 py-3 font-semibold transition ${
+                  disabled={loading}
+                  className={`min-h-[56px] rounded-2xl border px-4 py-3 font-semibold transition active:scale-[0.98] ${
                     isActive
-                      ? 'border-transparent bg-[#B6FF00] text-black'
+                      ? 'border-transparent bg-[#B6FF00] text-black shadow-lg'
                       : 'border-white/10 bg-black/20 text-white hover:border-white/20'
                   }`}
                 >
@@ -271,23 +349,25 @@ export default function ActionPanel({
           </div>
         </div>
 
-        {requiresWinner &&
-          renderPlayerButtons({
-            selectedSeat: winnerSeat,
-            onSelect: setWinnerSeat,
-            disabledSeat: resultType === 'ron' ? loserSeat : null,
-            title: 'Winner',
-            accentClass: 'bg-[#B6FF00] text-black',
-          })}
+        {requiresWinner
+          ? renderPlayerButtons({
+              selectedSeat: winnerSeat,
+              onSelect: setWinnerSeat,
+              disabledSeat: resultType === 'ron' ? loserSeat : null,
+              title: 'Winner',
+              accentClass: 'bg-[#B6FF00] text-black',
+            })
+          : null}
 
-        {requiresLoser &&
-          renderPlayerButtons({
-            selectedSeat: loserSeat,
-            onSelect: setLoserSeat,
-            disabledSeat: resultType === 'ron' ? winnerSeat : null,
-            title: resultType === 'misdeal' ? 'Misdeal Player' : 'Loser',
-            accentClass: 'bg-[#FF5F5F] text-white',
-          })}
+        {requiresLoser
+          ? renderPlayerButtons({
+              selectedSeat: loserSeat,
+              onSelect: setLoserSeat,
+              disabledSeat: resultType === 'ron' ? winnerSeat : null,
+              title: resultType === 'misdeal' ? 'Misdeal Player' : 'Loser',
+              accentClass: 'bg-[#FF5F5F] text-white',
+            })
+          : null}
 
         {requiresTaiCount ? (
           <div className="space-y-3">
@@ -302,9 +382,10 @@ export default function ActionPanel({
                     key={value}
                     type="button"
                     onClick={() => setTaiCount(value)}
-                    className={`rounded-2xl px-4 py-3 font-semibold transition ${
+                    disabled={loading}
+                    className={`min-h-[52px] rounded-2xl px-4 py-3 font-semibold transition active:scale-[0.98] ${
                       isActive
-                        ? 'bg-[#B6FF00] text-black'
+                        ? 'bg-[#B6FF00] text-black shadow-lg'
                         : 'border border-white/10 bg-black/20 text-white hover:border-white/20'
                     }`}
                   >
@@ -318,7 +399,8 @@ export default function ActionPanel({
               <button
                 type="button"
                 onClick={() => setTaiCount((prev) => Math.max(1, prev - 1))}
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-lg font-semibold text-white transition hover:border-white/20"
+                disabled={loading}
+                className="min-h-[52px] rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-lg font-semibold text-white transition hover:border-white/20 active:scale-[0.98]"
               >
                 −
               </button>
@@ -326,15 +408,18 @@ export default function ActionPanel({
               <input
                 type="number"
                 min={1}
-                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center outline-none transition focus:border-lime-400"
+                className="min-h-[52px] w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center text-lg outline-none transition focus:border-lime-400"
                 value={taiCount}
-                onChange={(e) => setTaiCount(Math.max(1, Number(e.target.value) || 1))}
+                onChange={(e) =>
+                  setTaiCount(Math.max(1, Number(e.target.value) || 1))
+                }
               />
 
               <button
                 type="button"
                 onClick={() => setTaiCount((prev) => prev + 1)}
-                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-lg font-semibold text-white transition hover:border-white/20"
+                disabled={loading}
+                className="min-h-[52px] rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-lg font-semibold text-white transition hover:border-white/20 active:scale-[0.98]"
               >
                 +
               </button>
@@ -345,7 +430,7 @@ export default function ActionPanel({
         <div className="space-y-2">
           <label className="text-sm text-neutral-300">Note (Optional)</label>
           <textarea
-            className="min-h-[96px] w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
+            className="min-h-[88px] w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Add a short note for this hand"
@@ -353,9 +438,14 @@ export default function ActionPanel({
         </div>
 
         <button
+          ref={saveButtonRef}
           type="submit"
           disabled={loading}
-          className="w-full rounded-2xl bg-[#B6FF00] px-4 py-4 font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className={`sticky bottom-3 z-10 w-full rounded-2xl px-4 py-4 text-base font-semibold transition active:scale-[0.99] ${
+            loading
+              ? 'cursor-not-allowed bg-[#B6FF00]/60 text-black opacity-70'
+              : 'bg-[#B6FF00] text-black shadow-[0_8px_30px_rgba(182,255,0,0.22)] hover:opacity-95'
+          }`}
         >
           {loading ? 'Saving Record...' : 'Save Record'}
         </button>
