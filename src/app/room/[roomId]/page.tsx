@@ -23,8 +23,7 @@ export default function RoomPage() {
   const fetchRoomData = useCallback(async () => {
     if (!roomId) return;
 
-    setLoading(true);
-    setErrorMessage('');
+    console.log('[fetchRoomData] start:', roomId);
 
     try {
       const [roomRes, playersRes, scoreChangesRes] = await Promise.all([
@@ -53,11 +52,18 @@ export default function RoomPage() {
         throw scoreChangesRes.error;
       }
 
+      console.log('[fetchRoomData] success:', {
+        room: roomRes.data,
+        playersCount: playersRes.data?.length ?? 0,
+        scoreChangesCount: scoreChangesRes.data?.length ?? 0,
+      });
+
       setRoom(roomRes.data);
       setPlayers(playersRes.data ?? []);
       setScoreChanges(scoreChangesRes.data ?? []);
+      setErrorMessage('');
     } catch (error) {
-      console.error('Fetch room data failed:', error);
+      console.error('[fetchRoomData] failed:', error);
       setErrorMessage('Failed to load room data.');
     } finally {
       setLoading(false);
@@ -65,8 +71,54 @@ export default function RoomPage() {
   }, [roomId]);
 
   useEffect(() => {
+    setLoading(true);
     fetchRoomData();
   }, [fetchRoomData]);
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    console.log('[Realtime] creating channel for room:', roomId);
+
+    const channel = supabase.channel(`room-${roomId}-realtime`);
+
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'score_changes',
+        filter: `room_id=eq.${roomId}`,
+      },
+      async (payload) => {
+        console.log('[Realtime] score_changes INSERT:', payload);
+        await fetchRoomData();
+      }
+    );
+
+    channel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'rooms',
+        filter: `id=eq.${roomId}`,
+      },
+      async (payload) => {
+        console.log('[Realtime] rooms UPDATE:', payload);
+        await fetchRoomData();
+      }
+    );
+
+    channel.subscribe((status) => {
+      console.log('[Realtime] channel status:', status);
+    });
+
+    return () => {
+      console.log('[Realtime] removing channel for room:', roomId);
+      supabase.removeChannel(channel);
+    };
+  }, [roomId, fetchRoomData]);
 
   const playersWithScores = useMemo<PlayerWithScore[]>(() => {
     const scoreMap = new Map<number, number>();
