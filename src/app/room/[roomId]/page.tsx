@@ -7,6 +7,7 @@ import type { RecordItem, Room, RoomPlayer, ScoreChange } from '@/types/game';
 import ActionPanel from '@/components/ActionPanel';
 import HandHistory from '@/components/HandHistory';
 import UndoLastRecordButton from '@/components/UndoLastRecordButton';
+import ScoreTrendChart from '@/components/ScoreTrendChart';
 
 const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
 
@@ -324,6 +325,11 @@ export default function RoomPage() {
                 </p>
             </section>
             )}
+
+            <ScoreTrendChart
+            scoreChanges={scoreChanges}
+            players={players}
+            />
 
             <HandHistory records={records} players={players} />
           </div>
