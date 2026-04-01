@@ -8,6 +8,7 @@ import ActionPanel from '@/components/ActionPanel';
 import HandHistory from '@/components/HandHistory';
 import UndoLastRecordButton from '@/components/UndoLastRecordButton';
 import ScoreTrendChart from '@/components/ScoreTrendChart';
+import KPIBoard from '@/components/KPIBoard';
 
 const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
 
@@ -329,6 +330,11 @@ export default function RoomPage() {
             <ScoreTrendChart
             scoreChanges={scoreChanges}
             players={players}
+            />
+
+            <KPIBoard
+              records={records}
+              players={players}
             />
 
             <HandHistory records={records} players={players} />
