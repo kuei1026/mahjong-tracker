@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { calculateScoreChanges, type RecordType } from '@/lib/gameLogic';
 import type { Room, RoomPlayer } from '@/types/game';
+import TilePicker from '@/components/TilePicker';
 
 interface ActionPanelProps {
   room: Room;
@@ -29,6 +30,7 @@ export default function ActionPanel({
   const [winnerSeat, setWinnerSeat] = useState<number | null>(null);
   const [loserSeat, setLoserSeat] = useState<number | null>(null);
   const [taiCount, setTaiCount] = useState(1);
+  const [winningTile, setWinningTile] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -47,6 +49,7 @@ export default function ActionPanel({
   const requiresWinner = resultType === 'tsumo' || resultType === 'ron';
   const requiresLoser = resultType === 'ron' || resultType === 'misdeal';
   const requiresTaiCount = resultType === 'tsumo' || resultType === 'ron';
+  const supportsWinningTile = resultType === 'tsumo' || resultType === 'ron';
 
   useEffect(() => {
     if (!feedbackMessage) return;
@@ -80,6 +83,7 @@ export default function ActionPanel({
     setWinnerSeat(null);
     setLoserSeat(null);
     setTaiCount(1);
+    setWinningTile(null);
     setNote('');
   };
 
@@ -105,6 +109,7 @@ export default function ActionPanel({
       setWinnerSeat(null);
       setLoserSeat(null);
       setTaiCount(1);
+      setWinningTile(null);
       return;
     }
 
@@ -115,6 +120,7 @@ export default function ActionPanel({
 
     if (nextType === 'misdeal') {
       setWinnerSeat(null);
+      setWinningTile(null);
       return;
     }
   };
@@ -189,6 +195,7 @@ export default function ActionPanel({
         tai_count: requiresTaiCount ? taiCount : 0,
         note: note.trim() || null,
         created_by_name: room.owner_name,
+        winning_tile: supportsWinningTile ? winningTile : null,
       });
 
       if (recordError) {
@@ -425,6 +432,10 @@ export default function ActionPanel({
               </button>
             </div>
           </div>
+        ) : null}
+
+        {supportsWinningTile ? (
+          <TilePicker value={winningTile} onChange={setWinningTile} />
         ) : null}
 
         <div className="space-y-2">
