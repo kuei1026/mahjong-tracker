@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import type { RecordItem, Room, RoomPlayer, ScoreChange } from '@/types/game';
 import ActionPanel from '@/components/ActionPanel';
 import HandHistory from '@/components/HandHistory';
+import UndoLastRecordButton from '@/components/UndoLastRecordButton';
 
 const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
 
@@ -311,14 +312,17 @@ export default function RoomPage() {
             </section>
 
             {isOwner ? (
-              <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
+            <>
+                <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
+                <UndoLastRecordButton room={room} onUndone={fetchRoomData} />
+            </>
             ) : (
-              <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+            <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
                 <h2 className="text-2xl font-semibold">View Only</h2>
                 <p className="mt-3 text-sm leading-7 text-neutral-400">
-                  Only the room owner can record hand results in this version.
+                Only the room owner can record hand results in this version.
                 </p>
-              </section>
+            </section>
             )}
 
             <HandHistory records={records} players={players} />
