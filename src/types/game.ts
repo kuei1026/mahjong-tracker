@@ -39,6 +39,7 @@ export interface RecordItem {
   winner_seat: number | null;
   loser_seat: number | null;
   tai_count: number;
+  winning_tile: string | null;
   note: string | null;
   created_by_name: string;
   created_at: string;
