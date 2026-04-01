@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { Room, RoomPlayer, ScoreChange } from '@/types/game';
+import ActionPanel from '@/components/ActionPanel';
 
 type PlayerWithScore = RoomPlayer & {
   totalScore: number;
@@ -19,53 +20,53 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
 
-  useEffect(() => {
+  const fetchRoomData = useCallback(async () => {
     if (!roomId) return;
 
-    const fetchRoomData = async () => {
-      setLoading(true);
-      setErrorMessage('');
+    setLoading(true);
+    setErrorMessage('');
 
-      try {
-        const [roomRes, playersRes, scoreChangesRes] = await Promise.all([
-          supabase.from('rooms').select('*').eq('id', roomId).single(),
-          supabase
-            .from('room_players')
-            .select('*')
-            .eq('room_id', roomId)
-            .order('seat_index', { ascending: true }),
-          supabase
-            .from('score_changes')
-            .select('*')
-            .eq('room_id', roomId)
-            .order('created_at', { ascending: true }),
-        ]);
+    try {
+      const [roomRes, playersRes, scoreChangesRes] = await Promise.all([
+        supabase.from('rooms').select('*').eq('id', roomId).single(),
+        supabase
+          .from('room_players')
+          .select('*')
+          .eq('room_id', roomId)
+          .order('seat_index', { ascending: true }),
+        supabase
+          .from('score_changes')
+          .select('*')
+          .eq('room_id', roomId)
+          .order('created_at', { ascending: true }),
+      ]);
 
-        if (roomRes.error || !roomRes.data) {
-          throw roomRes.error ?? new Error('Room not found.');
-        }
-
-        if (playersRes.error) {
-          throw playersRes.error;
-        }
-
-        if (scoreChangesRes.error) {
-          throw scoreChangesRes.error;
-        }
-
-        setRoom(roomRes.data);
-        setPlayers(playersRes.data ?? []);
-        setScoreChanges(scoreChangesRes.data ?? []);
-      } catch (error) {
-        console.error('Fetch room data failed:', error);
-        setErrorMessage('Failed to load room data.');
-      } finally {
-        setLoading(false);
+      if (roomRes.error || !roomRes.data) {
+        throw roomRes.error ?? new Error('Room not found.');
       }
-    };
 
-    fetchRoomData();
+      if (playersRes.error) {
+        throw playersRes.error;
+      }
+
+      if (scoreChangesRes.error) {
+        throw scoreChangesRes.error;
+      }
+
+      setRoom(roomRes.data);
+      setPlayers(playersRes.data ?? []);
+      setScoreChanges(scoreChangesRes.data ?? []);
+    } catch (error) {
+      console.error('Fetch room data failed:', error);
+      setErrorMessage('Failed to load room data.');
+    } finally {
+      setLoading(false);
+    }
   }, [roomId]);
+
+  useEffect(() => {
+    fetchRoomData();
+  }, [fetchRoomData]);
 
   const playersWithScores = useMemo<PlayerWithScore[]>(() => {
     const scoreMap = new Map<number, number>();
@@ -153,57 +154,63 @@ export default function RoomPage() {
           </div>
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold">Players & Scores</h2>
-                <p className="mt-2 text-sm text-neutral-400">
-                  Current total score ranking for this room.
-                </p>
+        <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="flex flex-col gap-6">
+            <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold">Players & Scores</h2>
+                  <p className="mt-2 text-sm text-neutral-400">
+                    Current total score ranking for this room.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-neutral-300">
+                  {players.length} Players
+                </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm text-neutral-300">
-                {players.length} Players
-              </div>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              {playersWithScores.map((player, index) => {
-                const isPositive = player.totalScore >= 0;
+              <div className="grid gap-4 sm:grid-cols-2">
+                {playersWithScores.map((player, index) => {
+                  const isPositive = player.totalScore >= 0;
 
-                return (
-                  <div
-                    key={player.id}
-                    className="rounded-3xl border border-white/10 bg-black/20 p-5"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-neutral-500">
-                          Rank #{index + 1}
-                        </p>
-                        <h3 className="mt-2 text-2xl font-semibold">
-                          {player.player_name}
-                        </h3>
-                        <p className="mt-2 text-sm text-neutral-400">
-                          Seat {player.seat_index + 1}
-                          {player.is_owner ? ' · Owner' : ''}
-                        </p>
-                      </div>
+                  return (
+                    <div
+                      key={player.id}
+                      className="rounded-3xl border border-white/10 bg-black/20 p-5"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-neutral-500">
+                            Rank #{index + 1}
+                          </p>
+                          <h3 className="mt-2 text-2xl font-semibold">
+                            {player.player_name}
+                          </h3>
+                          <p className="mt-2 text-sm text-neutral-400">
+                            Seat {player.seat_index + 1}
+                            {player.is_owner ? ' · Owner' : ''}
+                          </p>
+                        </div>
 
-                      <div
-                        className={`rounded-2xl px-4 py-2 text-lg font-bold ${
-                          isPositive
-                            ? 'bg-[#B6FF00] text-black'
-                            : 'bg-[#FF5F5F] text-white'
-                        }`}
-                      >
-                        {player.totalScore > 0 ? `+${player.totalScore}` : player.totalScore}
+                        <div
+                          className={`rounded-2xl px-4 py-2 text-lg font-bold ${
+                            isPositive
+                              ? 'bg-[#B6FF00] text-black'
+                              : 'bg-[#FF5F5F] text-white'
+                          }`}
+                        >
+                          {player.totalScore > 0
+                            ? `+${player.totalScore}`
+                            : player.totalScore}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
           </div>
 
           <div className="flex flex-col gap-6">
@@ -235,12 +242,13 @@ export default function RoomPage() {
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-              <h2 className="text-2xl font-semibold">Next Step</h2>
-              <p className="mt-3 text-sm leading-7 text-neutral-400">
-                The next feature is the owner action panel: record tsumo, ron,
-                draw, and misdeal, then automatically write score changes into
-                Supabase.
-              </p>
+              <h2 className="text-2xl font-semibold">Scoring Rule</h2>
+              <div className="mt-4 space-y-3 text-sm text-neutral-400">
+                <p>Tsumo: winner gets 3x, others each pay 1x.</p>
+                <p>Ron: loser pays full amount to winner.</p>
+                <p>Draw: no score change.</p>
+                <p>Misdeal: selected player loses fixed penalty.</p>
+              </div>
             </section>
           </div>
         </section>
