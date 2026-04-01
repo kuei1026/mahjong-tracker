@@ -20,14 +20,11 @@ export default function UndoLastRecordButton({
     setMessage('');
 
     if (room.current_hand_no <= 0) {
-      setMessage('There is no hand to undo.');
+      setMessage('目前沒有可以撤銷的紀錄。');
       return;
     }
 
-    const confirmed = window.confirm(
-      'Are you sure you want to undo the last recorded hand?'
-    );
-
+    const confirmed = window.confirm('確定要撤銷最後一手紀錄嗎？');
     if (!confirmed) return;
 
     setLoading(true);
@@ -42,7 +39,7 @@ export default function UndoLastRecordButton({
         .single();
 
       if (lastHandError || !lastHand) {
-        throw lastHandError ?? new Error('Last hand not found.');
+        throw lastHandError ?? new Error('找不到最後一手。');
       }
 
       const { error: deleteHandError } = await supabase
@@ -81,39 +78,41 @@ export default function UndoLastRecordButton({
         throw updateRoomError;
       }
 
-      setMessage(`Hand #${lastHand.hand_no} was undone successfully.`);
+      setMessage(`已撤銷第 ${lastHand.hand_no} 手。`);
       await onUndone();
     } catch (error) {
       console.error('Undo last hand failed:', error);
-      setMessage('Failed to undo the last hand.');
+      setMessage('撤銷失敗，請稍後再試。');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-      <div className="mb-4">
-        <h2 className="text-2xl font-semibold">Undo Last Record</h2>
-        <p className="mt-2 text-sm text-neutral-400">
-          Remove the most recent hand and recalculate the room state.
-        </p>
+    <section className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-lg backdrop-blur">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-white">撤銷最後一手</h3>
+          <p className="mt-1 text-sm text-neutral-400">
+            修正誤記時可快速回退上一手。
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={loading}
+          className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-2.5 text-sm font-semibold text-red-200 transition hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? '撤銷中...' : '撤銷最後一手'}
+        </button>
       </div>
 
       {message ? (
-        <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-neutral-200">
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-neutral-200">
           {message}
         </div>
       ) : null}
-
-      <button
-        type="button"
-        onClick={handleUndo}
-        disabled={loading}
-        className="w-full rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 font-semibold text-red-200 transition hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {loading ? 'Undoing Last Record...' : 'Undo Last Record'}
-      </button>
     </section>
   );
 }

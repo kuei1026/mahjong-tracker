@@ -411,7 +411,11 @@ export default function RoomPage() {
             )}
 
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-2 shadow-lg backdrop-blur sm:p-3">
-              <ScoreTrendChart scoreChanges={scoreChanges} players={players} />
+              <ScoreTrendChart
+                records={records}
+                scoreChanges={scoreChanges}
+                players={players}
+              />
             </section>
 
             <section className="rounded-[28px] border border-white/10 bg-white/5 p-2 shadow-lg backdrop-blur sm:p-3">
@@ -486,17 +490,6 @@ export default function RoomPage() {
                     {formatLocalDateTime(room.created_at)}
                   </span>
                 </div>
-              </div>
-            </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-              <h2 className="text-2xl font-semibold">🧮 計分規則</h2>
-
-              <div className="mt-4 space-y-3 text-sm leading-7 text-neutral-400">
-                <p>自摸：贏家獲得 3 倍，其餘三家各支付 1 倍。</p>
-                <p>胡牌：放槍者單獨支付全部台數金額給贏家。</p>
-                <p>流局：本版暫不變動分數。</p>
-                <p>相公：指定玩家扣除固定罰分。</p>
               </div>
             </section>
 

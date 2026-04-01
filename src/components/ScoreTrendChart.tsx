@@ -1,81 +1,111 @@
 'use client';
 
 import {
-  LineChart,
+  CartesianGrid,
+  Legend,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
 } from 'recharts';
-import type { ScoreChange, RoomPlayer } from '@/types/game';
+import type { RecordItem, RoomPlayer, ScoreChange } from '@/types/game';
 
 interface Props {
+  records: RecordItem[];
   scoreChanges: ScoreChange[];
   players: RoomPlayer[];
 }
 
-const COLORS = ['#B6FF00', '#4FD1C5', '#F6AD55', '#FC8181'];
+const COLORS = ['#B6FF00', '#67E8F9', '#FDBA74', '#FB7185'];
 
-export default function ScoreTrendChart({ scoreChanges, players }: Props) {
-  // Step 1: 初始化玩家分數
-  const scoreMap: Record<number, number> = {};
-  players.forEach((p) => {
-    scoreMap[p.seat_index] = 0;
-  });
+export default function ScoreTrendChart({
+  records,
+  scoreChanges,
+  players,
+}: Props) {
+  const sortedPlayers = [...players].sort((a, b) => a.seat_index - b.seat_index);
 
-  // Step 2: 依時間排序
-  const sorted = [...scoreChanges].sort(
-    (a, b) =>
-      new Date(a.created_at).getTime() -
-      new Date(b.created_at).getTime()
+  const sortedRecords = [...records].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
-  // Step 3: 建立 chart data
-  const chartData: any[] = [];
+  const scoreMap: Record<number, number> = {};
+  sortedPlayers.forEach((player) => {
+    scoreMap[player.seat_index] = 0;
+  });
 
-  sorted.forEach((change, index) => {
-    scoreMap[change.seat_index] += change.delta_score;
+  const chartData = sortedRecords.map((record, index) => {
+    const currentHandScoreChanges = scoreChanges.filter(
+      (change) => change.hand_id === record.hand_id
+    );
 
-    const snapshot: any = {
+    currentHandScoreChanges.forEach((change) => {
+      scoreMap[change.seat_index] =
+        (scoreMap[change.seat_index] ?? 0) + change.delta_score;
+    });
+
+    const snapshot: Record<string, string | number> = {
       hand: index + 1,
     };
 
-    players.forEach((p) => {
-      snapshot[p.player_name] = scoreMap[p.seat_index];
+    sortedPlayers.forEach((player) => {
+      snapshot[player.player_name] = scoreMap[player.seat_index] ?? 0;
     });
 
-    chartData.push(snapshot);
+    return snapshot;
   });
 
   return (
-    <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-      <h2 className="mb-4 text-2xl font-semibold">Score Trend</h2>
+    <section className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-lg backdrop-blur sm:p-6">
+      <div className="mb-4">
+        <h2 className="text-2xl font-semibold">📈 分數走勢</h2>
+        <p className="mt-2 text-sm text-neutral-400">
+          依每一手紀錄重建累積分數變化。
+        </p>
+      </div>
 
       {chartData.length === 0 ? (
-        <p className="text-sm text-neutral-400">No data yet.</p>
+        <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-8 text-sm text-neutral-400">
+          目前還沒有足夠的對局資料可顯示走勢圖。
+        </div>
       ) : (
-        <div className="h-[300px] w-full">
+        <div className="h-[320px] w-full">
           <ResponsiveContainer>
-            <LineChart data={chartData}>
+            <LineChart data={chartData} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
+              <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
               <XAxis
                 dataKey="hand"
-                stroke="#aaa"
-                tick={{ fill: '#aaa' }}
+                stroke="#A3A3A3"
+                tick={{ fill: '#A3A3A3', fontSize: 12 }}
+                label={{ value: '局數', position: 'insideBottom', offset: -4, fill: '#A3A3A3' }}
               />
-              <YAxis stroke="#aaa" tick={{ fill: '#aaa' }} />
-              <Tooltip />
+              <YAxis
+                stroke="#A3A3A3"
+                tick={{ fill: '#A3A3A3', fontSize: 12 }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1F1F1F',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '12px',
+                  color: '#fff',
+                }}
+                labelStyle={{ color: '#fff' }}
+                formatter={(value: number, name: string) => [value, name]}
+                labelFormatter={(label) => `第 ${label} 手`}
+              />
               <Legend />
-
-              {players.map((p, index) => (
+              {sortedPlayers.map((player, index) => (
                 <Line
-                  key={p.id}
+                  key={player.id}
                   type="monotone"
-                  dataKey={p.player_name}
+                  dataKey={player.player_name}
                   stroke={COLORS[index % COLORS.length]}
-                  strokeWidth={2}
+                  strokeWidth={3}
                   dot={false}
+                  activeDot={{ r: 5 }}
                 />
               ))}
             </LineChart>
