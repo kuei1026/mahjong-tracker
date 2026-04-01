@@ -11,14 +11,23 @@ interface ActionPanelProps {
   onRecorded: () => Promise<void> | void;
 }
 
+const RESULT_OPTIONS: { label: string; value: RecordType }[] = [
+  { label: 'Tsumo', value: 'tsumo' },
+  { label: 'Ron', value: 'ron' },
+  { label: 'Draw', value: 'draw' },
+  { label: 'Misdeal', value: 'misdeal' },
+];
+
+const QUICK_TAI_OPTIONS = [1, 2, 3, 4, 5];
+
 export default function ActionPanel({
   room,
   players,
   onRecorded,
 }: ActionPanelProps) {
   const [resultType, setResultType] = useState<RecordType>('tsumo');
-  const [winnerSeat, setWinnerSeat] = useState<number | ''>('');
-  const [loserSeat, setLoserSeat] = useState<number | ''>('');
+  const [winnerSeat, setWinnerSeat] = useState<number | null>(null);
+  const [loserSeat, setLoserSeat] = useState<number | null>(null);
   const [taiCount, setTaiCount] = useState(1);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,18 +44,40 @@ export default function ActionPanel({
 
   const resetForm = () => {
     setResultType('tsumo');
-    setWinnerSeat('');
-    setLoserSeat('');
+    setWinnerSeat(null);
+    setLoserSeat(null);
     setTaiCount(1);
     setNote('');
   };
 
+  const handleResultTypeChange = (nextType: RecordType) => {
+    setResultType(nextType);
+    setMessage('');
+
+    if (nextType === 'draw') {
+      setWinnerSeat(null);
+      setLoserSeat(null);
+      setTaiCount(1);
+      return;
+    }
+
+    if (nextType === 'tsumo') {
+      setLoserSeat(null);
+      return;
+    }
+
+    if (nextType === 'misdeal') {
+      setWinnerSeat(null);
+      return;
+    }
+  };
+
   const validateForm = () => {
-    if (requiresWinner && winnerSeat === '') {
+    if (requiresWinner && winnerSeat === null) {
       return 'Please select a winner.';
     }
 
-    if (requiresLoser && loserSeat === '') {
+    if (requiresLoser && loserSeat === null) {
       return resultType === 'misdeal'
         ? 'Please select the misdeal player.'
         : 'Please select a loser.';
@@ -94,8 +125,8 @@ export default function ActionPanel({
 
       const calculatedScoreChanges = calculateScoreChanges({
         resultType,
-        winnerSeat: winnerSeat === '' ? null : winnerSeat,
-        loserSeat: loserSeat === '' ? null : loserSeat,
+        winnerSeat,
+        loserSeat,
         taiCount: requiresTaiCount ? taiCount : 0,
         taiUnitAmount: room.tai_unit_amount,
         misdealPenalty: room.misdeal_penalty,
@@ -105,8 +136,8 @@ export default function ActionPanel({
         hand_id: handData.id,
         room_id: room.id,
         result_type: resultType,
-        winner_seat: winnerSeat === '' ? null : winnerSeat,
-        loser_seat: loserSeat === '' ? null : loserSeat,
+        winner_seat: winnerSeat,
+        loser_seat: loserSeat,
         tai_count: requiresTaiCount ? taiCount : 0,
         note: note.trim() || null,
         created_by_name: room.owner_name,
@@ -153,12 +184,59 @@ export default function ActionPanel({
     }
   };
 
+  const renderPlayerButtons = ({
+    selectedSeat,
+    onSelect,
+    disabledSeat,
+    title,
+    accentClass,
+  }: {
+    selectedSeat: number | null;
+    onSelect: (seatIndex: number) => void;
+    disabledSeat?: number | null;
+    title: string;
+    accentClass: string;
+  }) => {
+    return (
+      <div className="space-y-2">
+        <label className="text-sm text-neutral-300">{title}</label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {sortedPlayers.map((player) => {
+            const isSelected = selectedSeat === player.seat_index;
+            const isDisabled = disabledSeat === player.seat_index;
+
+            return (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => onSelect(player.seat_index)}
+                disabled={isDisabled}
+                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                  isSelected
+                    ? `${accentClass} border-transparent`
+                    : 'border-white/10 bg-black/20 text-white hover:border-white/20'
+                } ${isDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              >
+                <div className="text-xs uppercase tracking-wide text-neutral-400">
+                  Seat {player.seat_index + 1}
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {player.player_name}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <section className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
       <div className="mb-6">
         <h2 className="text-2xl font-semibold">Owner Action Panel</h2>
         <p className="mt-2 text-sm text-neutral-400">
-          Record one hand result and automatically update room scores.
+          Record one hand result quickly and update room scores instantly.
         </p>
       </div>
 
@@ -168,85 +246,99 @@ export default function ActionPanel({
         </div>
       ) : null}
 
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-2">
           <label className="text-sm text-neutral-300">Result Type</label>
-          <select
-            className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
-            value={resultType}
-            onChange={(e) => {
-              const value = e.target.value as RecordType;
-              setResultType(value);
-              setMessage('');
-            }}
-          >
-            <option value="tsumo">Tsumo</option>
-            <option value="ron">Ron</option>
-            <option value="draw">Draw</option>
-            <option value="misdeal">Misdeal</option>
-          </select>
+          <div className="grid gap-3 sm:grid-cols-4">
+            {RESULT_OPTIONS.map((option) => {
+              const isActive = resultType === option.value;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleResultTypeChange(option.value)}
+                  className={`rounded-2xl border px-4 py-3 font-semibold transition ${
+                    isActive
+                      ? 'border-transparent bg-[#B6FF00] text-black'
+                      : 'border-white/10 bg-black/20 text-white hover:border-white/20'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {requiresWinner ? (
-          <div className="space-y-2">
-            <label className="text-sm text-neutral-300">Winner</label>
-            <select
-              className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
-              value={winnerSeat}
-              onChange={(e) =>
-                setWinnerSeat(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-            >
-              <option value="">Select winner</option>
-              {sortedPlayers.map((player) => (
-                <option key={player.id} value={player.seat_index}>
-                  Seat {player.seat_index + 1} - {player.player_name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
+        {requiresWinner &&
+          renderPlayerButtons({
+            selectedSeat: winnerSeat,
+            onSelect: setWinnerSeat,
+            disabledSeat: resultType === 'ron' ? loserSeat : null,
+            title: 'Winner',
+            accentClass: 'bg-[#B6FF00] text-black',
+          })}
 
-        {requiresLoser ? (
-          <div className="space-y-2">
-            <label className="text-sm text-neutral-300">
-              {resultType === 'misdeal' ? 'Misdeal Player' : 'Loser'}
-            </label>
-            <select
-              className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
-              value={loserSeat}
-              onChange={(e) =>
-                setLoserSeat(
-                  e.target.value === '' ? '' : Number(e.target.value)
-                )
-              }
-            >
-              <option value="">
-                {resultType === 'misdeal'
-                  ? 'Select misdeal player'
-                  : 'Select loser'}
-              </option>
-              {sortedPlayers.map((player) => (
-                <option key={player.id} value={player.seat_index}>
-                  Seat {player.seat_index + 1} - {player.player_name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
+        {requiresLoser &&
+          renderPlayerButtons({
+            selectedSeat: loserSeat,
+            onSelect: setLoserSeat,
+            disabledSeat: resultType === 'ron' ? winnerSeat : null,
+            title: resultType === 'misdeal' ? 'Misdeal Player' : 'Loser',
+            accentClass: 'bg-[#FF5F5F] text-white',
+          })}
 
         {requiresTaiCount ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <label className="text-sm text-neutral-300">Tai Count</label>
-            <input
-              type="number"
-              min={1}
-              className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 outline-none transition focus:border-lime-400"
-              value={taiCount}
-              onChange={(e) => setTaiCount(Number(e.target.value))}
-            />
+
+            <div className="grid grid-cols-5 gap-2">
+              {QUICK_TAI_OPTIONS.map((value) => {
+                const isActive = taiCount === value;
+
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTaiCount(value)}
+                    className={`rounded-2xl px-4 py-3 font-semibold transition ${
+                      isActive
+                        ? 'bg-[#B6FF00] text-black'
+                        : 'border border-white/10 bg-black/20 text-white hover:border-white/20'
+                    }`}
+                  >
+                    {value}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setTaiCount((prev) => Math.max(1, prev - 1))}
+                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-lg font-semibold text-white transition hover:border-white/20"
+              >
+                −
+              </button>
+
+              <input
+                type="number"
+                min={1}
+                className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-center outline-none transition focus:border-lime-400"
+                value={taiCount}
+                onChange={(e) => setTaiCount(Math.max(1, Number(e.target.value) || 1))}
+              />
+
+              <button
+                type="button"
+                onClick={() => setTaiCount((prev) => prev + 1)}
+                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-lg font-semibold text-white transition hover:border-white/20"
+              >
+                +
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -263,7 +355,7 @@ export default function ActionPanel({
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-2xl bg-[#B6FF00] px-4 py-3 font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-2xl bg-[#B6FF00] px-4 py-4 font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? 'Saving Record...' : 'Save Record'}
         </button>
