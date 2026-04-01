@@ -93,7 +93,7 @@ export default function ScoreTrendChart({
                   color: '#fff',
                 }}
                 labelStyle={{ color: '#fff' }}
-                formatter={(value: number, name: string) => [value, name]}
+                formatter={(value, name) => [Number(value), String(name)]}
                 labelFormatter={(label) => `第 ${label} 手`}
               />
               <Legend />
