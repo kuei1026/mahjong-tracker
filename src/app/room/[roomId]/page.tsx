@@ -2,37 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import type { RecordItem, Room, RoomPlayer, ScoreChange } from '@/types/game';
 import ActionPanel from '@/components/ActionPanel';
 import HandHistory from '@/components/HandHistory';
-import UndoLastRecordButton from '@/components/UndoLastRecordButton';
 import KPIBoard from '@/components/KPIBoard';
 import ScoreTrendChart from '@/components/ScoreTrendChart';
 
 const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
 
-type PlayerWithScore = RoomPlayer & {
-  totalScore: number;
-};
-
 const AVATAR_BG_CLASSES = [
-  'bg-lime-300 text-black',
-  'bg-cyan-300 text-black',
-  'bg-orange-300 text-black',
-  'bg-pink-300 text-black',
+  'bg-lime-400 text-black',
+  'bg-cyan-400 text-black',
+  'bg-orange-400 text-black',
+  'bg-pink-400 text-black',
 ];
-
-function getAvatarText(name: string) {
-  if (!name) return '?';
-  return name.trim().charAt(0).toUpperCase();
-}
-
-function formatLocalDateTime(dateString: string) {
-  return new Date(dateString).toLocaleString('zh-TW', {
-    hour12: false,
-  });
-}
 
 export default function RoomPage() {
   const params = useParams();
@@ -44,7 +29,7 @@ export default function RoomPage() {
   const [scoreChanges, setScoreChanges] = useState<ScoreChange[]>([]);
   const [currentUserName, setCurrentUserName] = useState('');
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
 
   const fetchRoomData = useCallback(async () => {
     if (!roomId) return;
@@ -69,35 +54,20 @@ export default function RoomPage() {
           .order('created_at', { ascending: true }),
       ]);
 
-      if (roomRes.error || !roomRes.data) {
-        throw roomRes.error ?? new Error('Room not found.');
-      }
-
-      if (playersRes.error) throw playersRes.error;
-      if (recordsRes.error) throw recordsRes.error;
-      if (scoreChangesRes.error) throw scoreChangesRes.error;
-
-      setRoom(roomRes.data);
-      setPlayers(playersRes.data ?? []);
-      setRecords(recordsRes.data ?? []);
-      setScoreChanges(scoreChangesRes.data ?? []);
-      setErrorMessage('');
+      if (roomRes.data) setRoom(roomRes.data);
+      if (playersRes.data) setPlayers(playersRes.data);
+      if (recordsRes.data) setRecords(recordsRes.data);
+      if (scoreChangesRes.data) setScoreChanges(scoreChangesRes.data);
     } catch (error) {
       console.error('[fetchRoomData] failed:', error);
-      setErrorMessage('載入房間資料失敗。');
     } finally {
       setLoading(false);
     }
   }, [roomId]);
 
   useEffect(() => {
-    const savedUserName =
-      localStorage.getItem(LOCAL_STORAGE_USER_NAME_KEY) ?? '';
+    const savedUserName = localStorage.getItem(LOCAL_STORAGE_USER_NAME_KEY) ?? '';
     setCurrentUserName(savedUserName);
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
     fetchRoomData();
   }, [fetchRoomData]);
 
@@ -105,407 +75,193 @@ export default function RoomPage() {
     if (!roomId) return;
 
     const channel = supabase.channel(`room-${roomId}-realtime`);
+    const sync = () => fetchRoomData();
 
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'score_changes',
-        filter: `room_id=eq.${roomId}`,
-      },
-      async () => {
-        await fetchRoomData();
-      }
-    );
+    channel
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'score_changes', filter: `room_id=eq.${roomId}` }, sync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'records', filter: `room_id=eq.${roomId}` }, sync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, sync)
+      .subscribe();
 
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'records',
-        filter: `room_id=eq.${roomId}`,
-      },
-      async () => {
-        await fetchRoomData();
-      }
-    );
-
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'rooms',
-        filter: `id=eq.${roomId}`,
-      },
-      async () => {
-        await fetchRoomData();
-      }
-    );
-
-    channel.subscribe((status) => {
-      console.log('[Realtime] channel status:', status);
-    });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [roomId, fetchRoomData]);
 
-  const playersWithScores = useMemo<PlayerWithScore[]>(() => {
+  const playersWithScores = useMemo(() => {
     const scoreMap = new Map<number, number>();
-
     for (const change of scoreChanges) {
       const currentScore = scoreMap.get(change.seat_index) ?? 0;
       scoreMap.set(change.seat_index, currentScore + change.delta_score);
     }
-
-    return [...players]
-      .map((player) => ({
-        ...player,
-        totalScore: scoreMap.get(player.seat_index) ?? 0,
-      }))
-      .sort((a, b) => b.totalScore - a.totalScore);
+    return [...players].map((player) => ({
+      ...player,
+      totalScore: scoreMap.get(player.seat_index) ?? 0,
+    }));
   }, [players, scoreChanges]);
 
   const isOwner = useMemo(() => {
     if (!room || !currentUserName) return false;
-
-    return (
-      room.owner_name.trim().toLowerCase() ===
-      currentUserName.trim().toLowerCase()
-    );
+    return room.owner_name.trim().toLowerCase() === currentUserName.trim().toLowerCase();
   }, [room, currentUserName]);
 
-  const topPlayer = playersWithScores[0] ?? null;
-
-  if (loading) {
+  if (loading || !room) {
     return (
-      <main className="min-h-screen bg-[#1B1B1B] px-4 py-6 text-white sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-neutral-300 shadow-lg backdrop-blur">
-            載入對局資料中...
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (errorMessage || !room) {
-    return (
-      <main className="min-h-screen bg-[#1B1B1B] px-4 py-6 text-white sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-3xl border border-red-400/30 bg-red-400/10 p-6 text-red-200 shadow-lg">
-            {errorMessage || '找不到房間。'}
-          </div>
-        </div>
+      <main className="flex min-h-screen items-center justify-center bg-[#0A0A0A] text-white font-mono">
+        <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1.5 }}>
+          LOADING ARENA...
+        </motion.div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#1B1B1B] px-4 py-6 text-white sm:px-6 sm:py-10">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <section className="overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-white/8 to-white/4 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur">
-          <div className="grid gap-6 p-6 lg:grid-cols-[1.5fr_1fr] lg:p-8">
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.28em] text-neutral-500">
-                  Mahjong Tracker
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <h1 className="text-3xl font-bold sm:text-4xl">
-                    🀄 對局總覽
-                  </h1>
-                  <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-sm font-medium text-lime-200">
-                    房號 {room.room_code}
-                  </span>
+    <main className="min-h-screen bg-[#0A0A0A] text-white overflow-x-hidden selection:bg-[#B6FF00] selection:text-black">
+      {/* 1. Sticky Header: 整合房號、局數與底台資訊 */}
+      <nav className="sticky top-0 z-30 flex items-center justify-between border-b border-white/5 bg-[#0A0A0A]/70 px-6 py-5 backdrop-blur-xl">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="text-[#B6FF00] font-black text-sm tracking-tighter italic">ROOM {room.room_code}</span>
+            <div className="h-1 w-1 rounded-full bg-white/20" />
+            <span className="text-xs text-neutral-400 font-medium">第 {room.current_hand_no} 手</span>
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-neutral-500">
+            <span className="text-neutral-300">{room.base_score ?? 0}</span>
+            <span className="opacity-40">/</span>
+            <span className="text-neutral-300">{room.tai_unit_amount ?? 0}</span>
+            <span className="ml-0.5 opacity-60 text-[9px]">TAI</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-full border border-white/10 bg-white/5 flex items-center justify-center shadow-inner">
+            <span className="text-xs font-black text-[#B6FF00]">{currentUserName.charAt(0).toUpperCase()}</span>
+          </div>
+        </div>
+      </nav>
+
+      {/* 2. Virtual Table Arena: 座標化排版 (東南西北方位) */}
+      <section className="relative h-[65vh] flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center opacity-[0.02] pointer-events-none select-none">
+          <h1 className="text-[150px] font-black italic tracking-tighter">ARENA</h1>
+        </div>
+
+        <div className="relative w-full h-full max-w-sm mx-auto">
+          {playersWithScores.map((p, i) => {
+            // 定義桌位：0-南(下), 1-東(右), 2-北(上), 3-西(左)
+            const positions = [
+              "bottom-10 left-1/2 -translate-x-1/2", 
+              "right-6 top-1/2 -translate-y-1/2",   
+              "top-10 left-1/2 -translate-x-1/2",    
+              "left-6 top-1/2 -translate-y-1/2"     
+            ];
+            
+            return (
+              <motion.div 
+                key={p.id} 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`absolute flex flex-col items-center gap-3 ${positions[i]}`}
+              >
+                <div className="relative group">
+                  <div className={`flex h-20 w-20 items-center justify-center rounded-full border-[4px] border-[#0A0A0A] shadow-[0_0_40px_rgba(0,0,0,0.6)] transition-transform group-active:scale-95 ${AVATAR_BG_CLASSES[p.seat_index % 4]}`}>
+                    <span className="text-2xl font-black">{p.player_name.charAt(0).toUpperCase()}</span>
+                  </div>
+                  {p.is_owner && (
+                    <div className="absolute -right-1 -top-1 bg-white text-[9px] px-1.5 py-0.5 rounded shadow-sm border border-black text-black font-black">
+                      OWNER
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm leading-7 text-neutral-400 sm:text-base">
-                  即時同步比分、紀錄每一手，讓整場牌局的變化一眼看懂。
-                </p>
+                <div className="text-center">
+                  <p className="text-[10px] font-black text-neutral-500 uppercase tracking-[0.2em]">{p.player_name}</p>
+                  <p className={`text-2xl font-mono font-black tracking-tighter ${p.totalScore >= 0 ? 'text-[#B6FF00]' : 'text-[#FF5F5F]'}`}>
+                    {p.totalScore > 0 ? `+${p.totalScore}` : p.totalScore}
+                  </p>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+        
+        {/* 滾動提示 */}
+        <div className="absolute bottom-6 flex flex-col items-center gap-1 opacity-20">
+          <span className="text-[9px] font-bold tracking-[0.3em] uppercase">Scroll</span>
+          <div className="w-px h-8 bg-gradient-to-b from-white to-transparent" />
+        </div>
+      </section>
+
+      {/* 3. 浮動紀錄按鈕: 質感 Glow 效果 */}
+      {isOwner && (
+        <div className="fixed bottom-12 left-0 right-0 z-40 flex justify-center px-10">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsRecordModalOpen(true)}
+            className="w-full max-w-xs bg-[#B6FF00] text-black py-5 rounded-full font-black text-xs uppercase tracking-[0.2em] shadow-[0_20px_50px_rgba(182,255,0,0.25)]"
+          >
+            + Record Hand
+          </motion.button>
+        </div>
+      )}
+
+      {/* 4. 戰報與分析區: 下滑顯示 */}
+      <section className="px-6 space-y-20 pb-40">
+        <div className="flex items-center gap-4 opacity-10">
+          <div className="h-px flex-1 bg-white" />
+          <span className="text-[10px] font-bold tracking-[0.5em] uppercase">Analytics</span>
+          <div className="h-px flex-1 bg-white" />
+        </div>
+        
+        <div className="rounded-[32px] border border-white/5 bg-white/[0.02] p-4 sm:p-6 shadow-xl backdrop-blur-sm">
+          <ScoreTrendChart records={records} scoreChanges={scoreChanges} players={players} />
+        </div>
+
+        <div className="rounded-[32px] border border-white/5 bg-white/[0.02] p-4 sm:p-6 shadow-xl backdrop-blur-sm">
+          <KPIBoard records={records} players={players} />
+        </div>
+
+        <div className="rounded-[32px] border border-white/5 bg-white/[0.02] p-4 sm:p-6 shadow-xl backdrop-blur-sm">
+          <HandHistory records={records} players={players} />
+        </div>
+      </section>
+
+      {/* 5. 全螢幕沉浸式紀錄 Modal (Framer Motion) */}
+      <AnimatePresence>
+        {isRecordModalOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: "100%" }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 220 }}
+            className="fixed inset-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-3xl flex flex-col"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-8 border-b border-white/5">
+              <div className="flex flex-col">
+                <h2 className="text-4xl font-black italic tracking-tighter text-[#B6FF00]">LOG.</h2>
+                <span className="text-[9px] text-neutral-500 uppercase tracking-widest font-bold mt-1">Add new game record</span>
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">
-                    房主
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-white">
-                    {room.owner_name}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">
-                    當前局數
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-white">
-                    第 {room.current_hand_no} 手
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">
-                    你的身份
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-white">
-                    {isOwner ? '房主' : '觀看者'}
-                  </p>
-                </div>
-              </div>
+              <button 
+                onClick={() => setIsRecordModalOpen(false)}
+                className="h-12 w-12 rounded-full border border-white/10 flex items-center justify-center text-xl hover:bg-white/5 transition-colors"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="rounded-[24px] border border-white/10 bg-black/20 p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">
-                    目前領先
-                  </p>
-                  <h2 className="mt-2 text-2xl font-bold">
-                    {topPlayer ? topPlayer.player_name : '—'}
-                  </h2>
-                </div>
-
-                <div className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-sm font-medium text-lime-200">
-                  即時排名
-                </div>
-              </div>
-
-              <div className="mt-5 space-y-4">
-                {topPlayer ? (
-                  <>
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold ${
-                          AVATAR_BG_CLASSES[topPlayer.seat_index % AVATAR_BG_CLASSES.length]
-                        }`}
-                      >
-                        {getAvatarText(topPlayer.player_name)}
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate text-lg font-semibold text-white">
-                          {topPlayer.player_name}
-                        </p>
-                        <p className="text-sm text-neutral-400">
-                          第 {topPlayer.seat_index + 1} 位
-                          {topPlayer.is_owner ? ' · 房主' : ''}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-[#B6FF00] px-4 py-4 text-black">
-                      <p className="text-sm font-medium opacity-70">目前總分</p>
-                      <p className="mt-1 text-3xl font-bold">
-                        {topPlayer.totalScore > 0
-                          ? `+${topPlayer.totalScore}`
-                          : topPlayer.totalScore}
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-neutral-400">尚無玩家資料</p>
-                )}
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-8 pb-32">
+              <div className="mx-auto max-w-md">
+                <ActionPanel 
+                  room={room} 
+                  players={players} 
+                  onRecorded={() => {
+                    fetchRoomData();
+                    setIsRecordModalOpen(false);
+                  }} 
+                />
               </div>
             </div>
-          </div>
-        </section>
-
-        <section className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-          <div className="flex flex-col gap-6">
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-semibold">🏆 玩家排名</h2>
-                  <p className="mt-2 text-sm text-neutral-400">
-                    依目前總分即時更新，讓牌局領先狀況一眼看懂。
-                  </p>
-                </div>
-
-                <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-neutral-300">
-                  共 {players.length} 位玩家
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                {playersWithScores.map((player, index) => {
-                  const isPositive = player.totalScore >= 0;
-                  const isLeader = index === 0;
-
-                  return (
-                    <div
-                      key={player.id}
-                      className={`rounded-[24px] border p-5 transition ${
-                        isLeader
-                          ? 'border-lime-300/30 bg-lime-300/10 shadow-[0_10px_30px_rgba(182,255,0,0.08)]'
-                          : 'border-white/10 bg-black/20'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex min-w-0 items-center gap-4">
-                          <div
-                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold ${
-                              AVATAR_BG_CLASSES[
-                                player.seat_index % AVATAR_BG_CLASSES.length
-                              ]
-                            }`}
-                          >
-                            {getAvatarText(player.player_name)}
-                          </div>
-
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-lg font-semibold text-white">
-                                {player.player_name}
-                              </p>
-                              {player.is_owner ? (
-                                <span className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs text-neutral-300">
-                                  房主
-                                </span>
-                              ) : null}
-                              {isLeader ? (
-                                <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-2 py-0.5 text-xs text-lime-200">
-                                  領先中
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="mt-1 text-sm text-neutral-400">
-                              第 {player.seat_index + 1} 位 · 排名 #{index + 1}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div
-                          className={`rounded-2xl px-4 py-2 text-lg font-bold ${
-                            isPositive
-                              ? 'bg-[#B6FF00] text-black'
-                              : 'bg-[#FF5F5F] text-white'
-                          }`}
-                        >
-                          {player.totalScore > 0
-                            ? `+${player.totalScore}`
-                            : player.totalScore}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {isOwner ? (
-              <>
-                <ActionPanel room={room} players={players} onRecorded={fetchRoomData} />
-                <UndoLastRecordButton room={room} onUndone={fetchRoomData} />
-              </>
-            ) : (
-              <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-                <h2 className="text-2xl font-semibold">👀 觀看模式</h2>
-                <p className="mt-3 text-sm leading-7 text-neutral-400">
-                  目前只有房主可以紀錄牌局。你現在可以即時查看排名、趨勢圖、數據分析與歷史紀錄。
-                </p>
-              </section>
-            )}
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-2 shadow-lg backdrop-blur sm:p-3">
-              <ScoreTrendChart
-                records={records}
-                scoreChanges={scoreChanges}
-                players={players}
-              />
-            </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-2 shadow-lg backdrop-blur sm:p-3">
-              <KPIBoard records={records} players={players} />
-            </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-2 shadow-lg backdrop-blur sm:p-3">
-              <HandHistory records={records} players={players} />
-            </section>
-          </div>
-
-          <div className="flex flex-col gap-6">
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-              <h2 className="text-2xl font-semibold">📌 房間資訊</h2>
-
-              <div className="mt-5 space-y-4 text-sm">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">房號</span>
-                  <span className="font-medium text-white">{room.room_code}</span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">房間狀態</span>
-                  <span className="font-medium text-white">
-                    {room.status === 'active' ? '進行中' : '已結束'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">每台金額</span>
-                  <span className="font-medium text-white">
-                    {room.tai_unit_amount}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">相公罰分</span>
-                  <span className="font-medium text-white">
-                    {room.misdeal_penalty}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">目前局數</span>
-                  <span className="font-medium text-white">
-                    第 {room.current_hand_no} 手
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">總分數事件</span>
-                  <span className="font-medium text-white">
-                    {scoreChanges.length}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">總紀錄數</span>
-                  <span className="font-medium text-white">{records.length}</span>
-                </div>
-
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <span className="text-neutral-400">目前使用者</span>
-                  <span className="font-medium text-white">
-                    {currentUserName || '未識別'}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-neutral-400">建立時間</span>
-                  <span className="font-medium text-white">
-                    {formatLocalDateTime(room.created_at)}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
-              <h2 className="text-2xl font-semibold">✨ 接下來可升級</h2>
-
-              <div className="mt-4 space-y-3 text-sm leading-7 text-neutral-400">
-                <p>• 玩家頭貼上傳與自訂暱稱顯示</p>
-                <p>• 聽牌牌型紀錄與 Tile Picker v2</p>
-                <p>• 場次結算頁與分享戰報圖片</p>
-                <p>• 稱號卡片與更多麻將數據分析</p>
-              </div>
-            </section>
-          </div>
-        </section>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }

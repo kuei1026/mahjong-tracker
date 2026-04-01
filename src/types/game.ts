@@ -6,6 +6,7 @@ export interface Room {
   id: string;
   room_code: string;
   owner_name: string;
+  base_score: number;
   status: RoomStatus;
   tai_unit_amount: number;
   misdeal_penalty: number;
