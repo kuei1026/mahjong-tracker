@@ -1,13 +1,12 @@
-export type RecordType = 'tsumo' | 'ron' | 'draw' | 'misdeal';
+export type RecordType = 'tsumo' | 'ron' | 'draw';
 
 export interface ScoreCalculationInput {
   resultType: RecordType;
   winnerSeat: number | null;
   loserSeat: number | null;
   taiCount: number;
-  baseScore: number;       // 新增
+  baseScore: number;
   taiUnitAmount: number;
-  misdealPenalty: number;
 }
 
 export interface ScoreDelta {
@@ -25,7 +24,6 @@ export function calculateScoreChanges(
     taiCount,
     baseScore,
     taiUnitAmount,
-    misdealPenalty,
   } = input;
 
   const deltas: ScoreDelta[] = [];
@@ -89,21 +87,6 @@ export function calculateScoreChanges(
           delta_score: 0,
         });
       }
-    }
-
-    return deltas;
-  }
-
-  if (resultType === 'misdeal') {
-    if (loserSeat === null) {
-      throw new Error('loserSeat is required for misdeal.');
-    }
-
-    for (let seat = 0; seat < 4; seat += 1) {
-      deltas.push({
-        seat_index: seat,
-        delta_score: seat === loserSeat ? -misdealPenalty : 0,
-      });
     }
 
     return deltas;

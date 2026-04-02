@@ -24,9 +24,8 @@ export default function HomePage() {
   const [player3, setPlayer3] = useState('');
   const [player4, setPlayer4] = useState('');
 
-  const [baseScore, setBaseScore] = useState(30); // 新增：一底多少
+  const [baseScore, setBaseScore] = useState(30);
   const [taiUnitAmount, setTaiUnitAmount] = useState(10);
-  const [misdealPenalty, setMisdealPenalty] = useState(20);
 
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [joinUserName, setJoinUserName] = useState('');
@@ -79,11 +78,6 @@ export default function HomePage() {
       return;
     }
 
-    if (misdealPenalty < 0) {
-      setMessage('相公罰分不能小於 0。');
-      return;
-    }
-
     setCreateLoading(true);
 
     try {
@@ -96,9 +90,8 @@ export default function HomePage() {
           .insert({
             room_code: roomCode,
             owner_name: trimmedOwnerName,
-            base_score: baseScore,          // 新增
+            base_score: baseScore,
             tai_unit_amount: taiUnitAmount,
-            misdeal_penalty: misdealPenalty,
           })
           .select()
           .single();
@@ -244,7 +237,7 @@ export default function HomePage() {
               placeholder="玩家 4"
             />
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm text-white/70">一底多少</label>
                 <input
@@ -266,17 +259,6 @@ export default function HomePage() {
                   onChange={(e) => setTaiUnitAmount(Number(e.target.value))}
                 />
               </div>
-
-              <div>
-                <label className="mb-2 block text-sm text-white/70">相公罰分</label>
-                <input
-                  type="number"
-                  min={0}
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                  value={misdealPenalty}
-                  onChange={(e) => setMisdealPenalty(Number(e.target.value))}
-                />
-              </div>
             </div>
 
             <div className="rounded-2xl border border-lime-400/20 bg-lime-400/10 px-4 py-3 text-sm text-lime-300">
@@ -289,6 +271,37 @@ export default function HomePage() {
               className="w-full rounded-full bg-[#B6FF00] py-4 text-lg font-black text-black transition active:scale-[0.99] disabled:opacity-60"
             >
               {createLoading ? '建立中...' : '建立房間'}
+            </button>
+          </form>
+        </section>
+
+        <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+          <h2 className="text-2xl font-black">加入房間</h2>
+          <p className="mt-2 text-sm text-white/60">
+            輸入房號與你的名稱即可進入對局。
+          </p>
+
+          <form onSubmit={handleJoinRoom} className="mt-6 space-y-4">
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+              value={joinRoomCode}
+              onChange={(e) => setJoinRoomCode(e.target.value)}
+              placeholder="輸入房號"
+            />
+
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+              value={joinUserName}
+              onChange={(e) => setJoinUserName(e.target.value)}
+              placeholder="你的名稱"
+            />
+
+            <button
+              type="submit"
+              disabled={joinLoading}
+              className="w-full rounded-full border border-white/10 bg-white/5 py-4 text-lg font-black text-white transition active:scale-[0.99] disabled:opacity-60"
+            >
+              {joinLoading ? '加入中...' : '加入房間'}
             </button>
           </form>
         </section>

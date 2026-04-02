@@ -1,6 +1,14 @@
 export type RoomStatus = 'active' | 'finished';
 
-export type RecordType = 'tsumo' | 'ron' | 'draw' | 'misdeal';
+export type RecordType = 'tsumo' | 'ron' | 'draw';
+
+export type WaitType =
+  | 'single_wait'
+  | 'double_sided'
+  | 'double_pair'
+  | 'edge_wait'
+  | 'triple_wait'
+  | 'multi_wait';
 
 export interface Room {
   id: string;
@@ -9,7 +17,6 @@ export interface Room {
   base_score: number;
   status: RoomStatus;
   tai_unit_amount: number;
-  misdeal_penalty: number;
   current_hand_no: number;
   created_at: string;
   updated_at: string;
@@ -40,8 +47,11 @@ export interface RecordItem {
   winner_seat: number | null;
   loser_seat: number | null;
   tai_count: number;
+  wait_type: WaitType | null;
   winning_tile: string | null;
   note: string | null;
+  misdeal_seat: number | null;
+  misdeal_note: string | null;
   created_by_name: string;
   created_at: string;
 }
