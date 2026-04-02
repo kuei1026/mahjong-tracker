@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 
 const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
@@ -31,11 +32,14 @@ function rotatePlayersFromStarter(grabOrder: string[], starterName: string): str
 const QUICK_BASE_SCORES = [30, 50, 100, 300];
 const QUICK_TAI_UNIT_AMOUNTS = [10, 20, 50, 100];
 
+type Mode = 'menu' | 'create' | 'join';
+type CreateStep = 1 | 2 | 3;
+
 export default function HomePage() {
   const router = useRouter();
 
-  const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
-  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1);
+  const [mode, setMode] = useState<Mode>('menu');
+  const [createStep, setCreateStep] = useState<CreateStep>(1);
 
   const [ownerName, setOwnerName] = useState('');
   const [player1, setPlayer1] = useState('');
@@ -65,10 +69,7 @@ export default function HomePage() {
     [player1, player2, player3, player4]
   );
 
-  const validPlayerNames = useMemo(
-    () => playerNames.filter(Boolean),
-    [playerNames]
-  );
+  const validPlayerNames = useMemo(() => playerNames.filter(Boolean), [playerNames]);
 
   const grabOrder = useMemo(
     () => [grabEast.trim(), grabSouth.trim(), grabWest.trim(), grabNorth.trim()],
@@ -106,6 +107,21 @@ export default function HomePage() {
     setGrabNorth('');
     setStartingDealerName('');
     setMessage('');
+  };
+
+  const openCreateFlow = () => {
+    resetCreateFlow();
+    setMode('create');
+  };
+
+  const openJoinFlow = () => {
+    setMessage('');
+    setMode('join');
+  };
+
+  const backToMenu = () => {
+    setMessage('');
+    setMode('menu');
   };
 
   const validateCreateStep1 = () => {
@@ -200,10 +216,12 @@ export default function HomePage() {
 
   const handlePrevCreateStep = () => {
     setMessage('');
+
     if (createStep === 2) {
       setCreateStep(1);
       return;
     }
+
     if (createStep === 3) {
       setCreateStep(2);
     }
@@ -329,281 +347,358 @@ export default function HomePage() {
     }
   };
 
+  const renderCreateStep = () => {
+    if (createStep === 1) {
+      return (
+        <motion.div
+          key="create-step-1"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.18 }}
+          className="space-y-5"
+        >
+          <div>
+            <p className="text-xs font-black tracking-[0.35em] text-neutral-500 uppercase">
+              Step 1
+            </p>
+            <h3 className="mt-2 text-2xl font-black">玩家與金額</h3>
+            <p className="mt-2 text-sm text-white/60">
+              先填房主、四位玩家，以及底錢與台錢。
+            </p>
+          </div>
+
+          <input
+            className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+            value={ownerName}
+            onChange={(e) => setOwnerName(e.target.value)}
+            placeholder="房主名稱，例如：阿傑"
+          />
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              value={player1}
+              onChange={(e) => setPlayer1(e.target.value)}
+              placeholder="玩家 1"
+            />
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              value={player2}
+              onChange={(e) => setPlayer2(e.target.value)}
+              placeholder="玩家 2"
+            />
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              value={player3}
+              onChange={(e) => setPlayer3(e.target.value)}
+              placeholder="玩家 3"
+            />
+            <input
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              value={player4}
+              onChange={(e) => setPlayer4(e.target.value)}
+              placeholder="玩家 4"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="block text-sm font-bold text-white/70">底錢</label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {QUICK_BASE_SCORES.map((value) => (
+                  <button
+                    key={`base-${value}`}
+                    type="button"
+                    onClick={() => setBaseScore(value)}
+                    className={`rounded-full px-4 py-2 text-sm font-black transition ${
+                      baseScore === value
+                        ? 'bg-[#B6FF00] text-black'
+                        : 'border border-white/10 bg-white/5 text-white'
+                    }`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                className="mt-4 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+                value={baseScore}
+                onChange={(e) => setBaseScore(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="block text-sm font-bold text-white/70">台錢</label>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {QUICK_TAI_UNIT_AMOUNTS.map((value) => (
+                  <button
+                    key={`tai-${value}`}
+                    type="button"
+                    onClick={() => setTaiUnitAmount(value)}
+                    className={`rounded-full px-4 py-2 text-sm font-black transition ${
+                      taiUnitAmount === value
+                        ? 'bg-[#B6FF00] text-black'
+                        : 'border border-white/10 bg-white/5 text-white'
+                    }`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min={1}
+                inputMode="numeric"
+                className="mt-4 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+                value={taiUnitAmount}
+                onChange={(e) => setTaiUnitAmount(Number(e.target.value))}
+              />
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
+
+    if (createStep === 2) {
+      return (
+        <motion.div
+          key="create-step-2"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.18 }}
+          className="space-y-5"
+        >
+          <div>
+            <p className="text-xs font-black tracking-[0.35em] text-neutral-500 uppercase">
+              Step 2
+            </p>
+            <h3 className="mt-2 text-2xl font-black">抓位順序</h3>
+            <p className="mt-2 text-sm text-white/60">
+              依序選擇抓位東、抓位南、抓位西、抓位北。
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="mb-3 block text-sm font-black text-[#B6FF00]">抓位東</label>
+              <select
+                value={grabEast}
+                onChange={(e) => setGrabEast(e.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              >
+                <option value="">請選擇玩家</option>
+                {validPlayerNames.map((name) => (
+                  <option key={`grab-east-${name}`} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="mb-3 block text-sm font-black text-[#67E8F9]">抓位南</label>
+              <select
+                value={grabSouth}
+                onChange={(e) => setGrabSouth(e.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              >
+                <option value="">請選擇玩家</option>
+                {validPlayerNames.map((name) => (
+                  <option key={`grab-south-${name}`} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="mb-3 block text-sm font-black text-[#FDBA74]">抓位西</label>
+              <select
+                value={grabWest}
+                onChange={(e) => setGrabWest(e.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              >
+                <option value="">請選擇玩家</option>
+                {validPlayerNames.map((name) => (
+                  <option key={`grab-west-${name}`} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <label className="mb-3 block text-sm font-black text-[#FB7185]">抓位北</label>
+              <select
+                value={grabNorth}
+                onChange={(e) => setGrabNorth(e.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+              >
+                <option value="">請選擇玩家</option>
+                {validPlayerNames.map((name) => (
+                  <option key={`grab-north-${name}`} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </motion.div>
+      );
+    }
+
+    return (
+      <motion.div
+        key="create-step-3"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -12 }}
+        transition={{ duration: 0.18 }}
+        className="space-y-5"
+      >
+        <div>
+          <p className="text-xs font-black tracking-[0.35em] text-neutral-500 uppercase">
+            Step 3
+          </p>
+          <h3 className="mt-2 text-2xl font-black">誰起莊</h3>
+          <p className="mt-2 text-sm text-white/60">
+            起莊者會自動成為正式東位，開局固定為東風東。
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {validPlayerNames.map((name) => (
+            <button
+              key={`starter-${name}`}
+              type="button"
+              onClick={() => setStartingDealerName(name)}
+              className={`rounded-3xl border px-4 py-5 text-left transition ${
+                startingDealerName === name
+                  ? 'border-transparent bg-[#B6FF00] text-black'
+                  : 'border-white/10 bg-white/[0.03] text-white'
+              }`}
+            >
+              <div className="text-base font-black">{name}</div>
+              <div className="mt-1 text-xs opacity-80">起莊</div>
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    );
+  };
+
   return (
-    <main className="min-h-screen bg-black px-6 py-10 text-white">
+    <main className="min-h-screen bg-black px-5 py-8 text-white sm:px-6 sm:py-10">
       <div className="mx-auto max-w-3xl">
-        <h1 className="text-3xl font-black">麻將對局紀錄工具</h1>
-        <p className="mt-3 text-white/70">
-          用最不打斷牌局節奏的方式，快速紀錄每一手輸贏、同步比分、查看分數走勢與牌局數據。
-        </p>
+        <div className="mb-8">
+          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
+            麻將對局紀錄工具
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-white/65 sm:text-base">
+            用更流暢的方式建立房間、記錄每一手牌局，讓比分、局面與對局節奏都更清楚。
+          </p>
+        </div>
 
         {message ? (
-          <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
             {message}
           </div>
         ) : null}
 
-        {mode === 'menu' && (
-          <section className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('create');
-                setMessage('');
-              }}
-              className="rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-8 text-left transition hover:bg-white/[0.06]"
+        <AnimatePresence mode="wait">
+          {mode === 'menu' && (
+            <motion.section
+              key="menu"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.18 }}
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2"
             >
-              <div className="text-2xl font-black">建立房間</div>
-              <p className="mt-2 text-sm text-white/60">
-                逐步設定玩家、金額、抓位順序與起莊。
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setMode('join');
-                setMessage('');
-              }}
-              className="rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-8 text-left transition hover:bg-white/[0.06]"
-            >
-              <div className="text-2xl font-black">加入房間</div>
-              <p className="mt-2 text-sm text-white/60">
-                輸入房號與你的名稱即可快速加入。
-              </p>
-            </button>
-          </section>
-        )}
-
-        {mode === 'create' && (
-          <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-black">建立房間</h2>
+              <button
+                type="button"
+                onClick={openCreateFlow}
+                className="group rounded-[28px] border border-white/10 bg-white/[0.03] px-6 py-8 text-left transition hover:bg-white/[0.06]"
+              >
+                <div className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
+                  Create
+                </div>
+                <div className="mt-3 text-2xl font-black">建立房間</div>
                 <p className="mt-2 text-sm text-white/60">
-                  依序完成設定，不需要滑很長頁面。
+                  逐步設定玩家、金額、抓位與起莊，快速開局。
                 </p>
-              </div>
+              </button>
 
               <button
                 type="button"
-                onClick={() => {
-                  setMode('menu');
-                  resetCreateFlow();
-                }}
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
+                onClick={openJoinFlow}
+                className="group rounded-[28px] border border-white/10 bg-white/[0.03] px-6 py-8 text-left transition hover:bg-white/[0.06]"
               >
-                返回
-              </button>
-            </div>
-
-            <div className="mt-5 flex items-center gap-2">
-              {[1, 2, 3].map((step) => (
-                <div
-                  key={step}
-                  className={`h-1 flex-1 rounded-full ${
-                    createStep >= step ? 'bg-[#B6FF00]' : 'bg-white/10'
-                  }`}
-                />
-              ))}
-            </div>
-
-            <form onSubmit={handleCreateRoom} className="mt-6 space-y-5">
-              {createStep === 1 && (
-                <div className="space-y-5">
-                  <div>
-                    <h3 className="text-xl font-black">Step 1｜玩家與金額</h3>
-                    <p className="mt-2 text-sm text-white/60">
-                      先填房主、四位玩家，以及底錢與台錢。
-                    </p>
-                  </div>
-
-                  <input
-                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                    value={ownerName}
-                    onChange={(e) => setOwnerName(e.target.value)}
-                    placeholder="房主名稱，例如：阿傑"
-                  />
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <input
-                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      value={player1}
-                      onChange={(e) => setPlayer1(e.target.value)}
-                      placeholder="玩家 1"
-                    />
-                    <input
-                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      value={player2}
-                      onChange={(e) => setPlayer2(e.target.value)}
-                      placeholder="玩家 2"
-                    />
-                    <input
-                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      value={player3}
-                      onChange={(e) => setPlayer3(e.target.value)}
-                      placeholder="玩家 3"
-                    />
-                    <input
-                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      value={player4}
-                      onChange={(e) => setPlayer4(e.target.value)}
-                      placeholder="玩家 4"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm text-white/70">底錢</label>
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {QUICK_BASE_SCORES.map((value) => (
-                          <button
-                            key={`base-${value}`}
-                            type="button"
-                            onClick={() => setBaseScore(value)}
-                            className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
-                              baseScore === value
-                                ? 'bg-[#B6FF00] text-black'
-                                : 'border border-white/10 bg-white/5 text-white'
-                            }`}
-                          >
-                            {value}
-                          </button>
-                        ))}
-                      </div>
-                      <input
-                        type="number"
-                        min={0}
-                        inputMode="numeric"
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                        value={baseScore}
-                        onChange={(e) => setBaseScore(Number(e.target.value))}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-sm text-white/70">台錢</label>
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {QUICK_TAI_UNIT_AMOUNTS.map((value) => (
-                          <button
-                            key={`tai-${value}`}
-                            type="button"
-                            onClick={() => setTaiUnitAmount(value)}
-                            className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
-                              taiUnitAmount === value
-                                ? 'bg-[#B6FF00] text-black'
-                                : 'border border-white/10 bg-white/5 text-white'
-                            }`}
-                          >
-                            {value}
-                          </button>
-                        ))}
-                      </div>
-                      <input
-                        type="number"
-                        min={1}
-                        inputMode="numeric"
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                        value={taiUnitAmount}
-                        onChange={(e) => setTaiUnitAmount(Number(e.target.value))}
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleNextCreateStep}
-                    className="w-full rounded-full bg-[#B6FF00] py-4 text-lg font-black text-black transition active:scale-[0.99]"
-                  >
-                    下一步
-                  </button>
+                <div className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
+                  Join
                 </div>
-              )}
+                <div className="mt-3 text-2xl font-black">加入房間</div>
+                <p className="mt-2 text-sm text-white/60">
+                  輸入房號與你的名稱，直接加入正在進行中的牌局。
+                </p>
+              </button>
+            </motion.section>
+          )}
 
-              {createStep === 2 && (
-                <div className="space-y-5">
-                  <div>
-                    <h3 className="text-xl font-black">Step 2｜抓位順序</h3>
-                    <p className="mt-2 text-sm text-white/60">
-                      請依序選擇抓位東、抓位南、抓位西、抓位北。
-                    </p>
-                  </div>
+          {mode === 'create' && (
+            <motion.section
+              key="create"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.18 }}
+              className="rounded-[30px] border border-white/10 bg-white/[0.03] pb-28"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-white/5 px-5 py-5 sm:px-6">
+                <div>
+                  <p className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
+                    Room Setup
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black">建立房間</h2>
+                  <p className="mt-2 text-sm text-white/60">
+                    分三步完成設定，不需要長頁面來回滑動。
+                  </p>
+                </div>
 
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-[#B6FF00]">
-                        抓位東
-                      </label>
-                      <select
-                        value={grabEast}
-                        onChange={(e) => setGrabEast(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      >
-                        <option value="">請選擇玩家</option>
-                        {validPlayerNames.map((name) => (
-                          <option key={`grab-east-${name}`} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                <button
+                  type="button"
+                  onClick={backToMenu}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
+                >
+                  返回
+                </button>
+              </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-[#67E8F9]">
-                        抓位南
-                      </label>
-                      <select
-                        value={grabSouth}
-                        onChange={(e) => setGrabSouth(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      >
-                        <option value="">請選擇玩家</option>
-                        {validPlayerNames.map((name) => (
-                          <option key={`grab-south-${name}`} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+              <div className="px-5 pb-5 pt-4 sm:px-6">
+                <div className="mb-6 flex items-center gap-2">
+                  {[1, 2, 3].map((step) => (
+                    <div
+                      key={step}
+                      className={`h-1 flex-1 rounded-full ${
+                        createStep >= step ? 'bg-[#B6FF00]' : 'bg-white/10'
+                      }`}
+                    />
+                  ))}
+                </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-[#FDBA74]">
-                        抓位西
-                      </label>
-                      <select
-                        value={grabWest}
-                        onChange={(e) => setGrabWest(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      >
-                        <option value="">請選擇玩家</option>
-                        {validPlayerNames.map((name) => (
-                          <option key={`grab-west-${name}`} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                <form onSubmit={handleCreateRoom}>
+                  <AnimatePresence mode="wait">{renderCreateStep()}</AnimatePresence>
+                </form>
+              </div>
 
-                    <div>
-                      <label className="mb-2 block text-sm font-bold text-[#FB7185]">
-                        抓位北
-                      </label>
-                      <select
-                        value={grabNorth}
-                        onChange={(e) => setGrabNorth(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                      >
-                        <option value="">請選擇玩家</option>
-                        {validPlayerNames.map((name) => (
-                          <option key={`grab-north-${name}`} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
+              <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 px-5 py-4 backdrop-blur-xl sm:px-6">
+                <div className="mx-auto flex max-w-3xl gap-3">
+                  {createStep > 1 ? (
                     <button
                       type="button"
                       onClick={handlePrevCreateStep}
@@ -611,113 +706,97 @@ export default function HomePage() {
                     >
                       上一步
                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={backToMenu}
+                      className="flex-1 rounded-full border border-white/10 bg-white/5 py-4 text-base font-black text-white transition active:scale-[0.99]"
+                    >
+                      返回
+                    </button>
+                  )}
+
+                  {createStep < 3 ? (
                     <button
                       type="button"
                       onClick={handleNextCreateStep}
-                      className="flex-[1.4] rounded-full bg-[#B6FF00] py-4 text-base font-black text-black transition active:scale-[0.99]"
+                      className="flex-[1.35] rounded-full bg-[#B6FF00] py-4 text-base font-black text-black transition active:scale-[0.99]"
                     >
                       下一步
                     </button>
-                  </div>
-                </div>
-              )}
-
-              {createStep === 3 && (
-                <div className="space-y-5">
-                  <div>
-                    <h3 className="text-xl font-black">Step 3｜誰起莊</h3>
-                    <p className="mt-2 text-sm text-white/60">
-                      起莊者會自動成為正式東位，開局固定為東風東。
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {validPlayerNames.map((name) => (
-                      <button
-                        key={`starter-${name}`}
-                        type="button"
-                        onClick={() => setStartingDealerName(name)}
-                        className={`rounded-2xl border px-4 py-4 text-left transition ${
-                          startingDealerName === name
-                            ? 'border-transparent bg-[#B6FF00] text-black'
-                            : 'border-white/10 bg-black/40 text-white'
-                        }`}
-                      >
-                        <div className="text-sm font-black">{name}</div>
-                        <div className="mt-1 text-xs opacity-80">起莊</div>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex gap-3">
+                  ) : (
                     <button
                       type="button"
-                      onClick={handlePrevCreateStep}
-                      className="flex-1 rounded-full border border-white/10 bg-white/5 py-4 text-base font-black text-white transition active:scale-[0.99]"
-                    >
-                      上一步
-                    </button>
-                    <button
-                      type="submit"
+                      onClick={() => {
+                        const fakeEvent = { preventDefault: () => undefined } as FormEvent;
+                        void handleCreateRoom(fakeEvent);
+                      }}
                       disabled={createLoading}
-                      className="flex-[1.4] rounded-full bg-[#B6FF00] py-4 text-base font-black text-black transition active:scale-[0.99] disabled:opacity-60"
+                      className="flex-[1.35] rounded-full bg-[#B6FF00] py-4 text-base font-black text-black transition active:scale-[0.99] disabled:opacity-60"
                     >
                       {createLoading ? '建立中...' : '建立房間'}
                     </button>
-                  </div>
+                  )}
                 </div>
-              )}
-            </form>
-          </section>
-        )}
+              </div>
+            </motion.section>
+          )}
 
-        {mode === 'join' && (
-          <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-black">加入房間</h2>
-                <p className="mt-2 text-sm text-white/60">
-                  輸入房號與你的名稱即可進入對局。
-                </p>
+          {mode === 'join' && (
+            <motion.section
+              key="join"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.18 }}
+              className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
+                    Join Room
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black">加入房間</h2>
+                  <p className="mt-2 text-sm text-white/60">
+                    輸入房號與你的名稱即可進入對局。
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={backToMenu}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
+                >
+                  返回
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('menu');
-                  setMessage('');
-                }}
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
-              >
-                返回
-              </button>
-            </div>
+              <form onSubmit={handleJoinRoom} className="mt-6 space-y-4">
+                <input
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+                  value={joinRoomCode}
+                  onChange={(e) => setJoinRoomCode(e.target.value)}
+                  placeholder="輸入房號"
+                />
 
-            <form onSubmit={handleJoinRoom} className="mt-6 space-y-4">
-              <input
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                value={joinRoomCode}
-                onChange={(e) => setJoinRoomCode(e.target.value)}
-                placeholder="輸入房號"
-              />
+                <input
+                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
+                  value={joinUserName}
+                  onChange={(e) => setJoinUserName(e.target.value)}
+                  placeholder="你的名稱"
+                />
 
-              <input
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                value={joinUserName}
-                onChange={(e) => setJoinUserName(e.target.value)}
-                placeholder="你的名稱"
-              />
-
-              <button
-                type="submit"
-                disabled={joinLoading}
-                className="w-full rounded-full border border-white/10 bg-white/5 py-4 text-lg font-black text-white transition active:scale-[0.99] disabled:opacity-60"
-              >
-                {joinLoading ? '加入中...' : '加入房間'}
-              </button>
-            </form>
-          </section>
-        )}
+                <button
+                  type="submit"
+                  disabled={joinLoading}
+                  className="w-full rounded-full border border-white/10 bg-white/5 py-4 text-lg font-black text-white transition active:scale-[0.99] disabled:opacity-60"
+                >
+                  {joinLoading ? '加入中...' : '加入房間'}
+                </button>
+              </form>
+            </motion.section>
+          )}
+        </AnimatePresence>
       </div>
     </main>
   );
