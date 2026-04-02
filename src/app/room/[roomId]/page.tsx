@@ -84,11 +84,11 @@ export default function RoomPage() {
             <span className="text-xs text-neutral-400 font-medium">第 {room.current_hand_no} 手</span>
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-neutral-500">
+            <span className="opacity-30">1 底</span>
             <span className="text-neutral-300">{room.base_score ?? 0}</span>
-            <span className="opacity-30">底</span>
             <span className="mx-0.5 opacity-10">/</span>
+            <span className="opacity-30">1 台</span>
             <span className="text-neutral-300">{room.tai_unit_amount ?? 0}</span>
-            <span className="opacity-30">台</span>
           </div>
         </div>
         <div className="h-9 w-9 rounded-full border border-white/10 bg-white/5 flex items-center justify-center shadow-inner">
@@ -203,19 +203,24 @@ export default function RoomPage() {
             transition={{ type: "spring", damping: 28, stiffness: 220 }}
             className="fixed inset-0 z-50 flex flex-col bg-[#0A0A0A]/95 backdrop-blur-3xl"
           >
-            <div className="flex items-center justify-between p-8 border-b border-white/5">
+            <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
               <div className="flex flex-col">
-                <h2 className="text-4xl font-black italic tracking-tighter text-[#B6FF00]">紀錄此手.</h2>
-                <span className="text-[9px] text-neutral-500 uppercase tracking-widest font-bold mt-1">請選擇該局結果與台數</span>
+                <h2 className="text-3xl font-black italic tracking-tighter text-[#B6FF00]">
+                  紀錄此手.
+                </h2>
+                <span className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-neutral-500">
+                  選結果與必要資訊即可快速送出
+                </span>
               </div>
-              <button 
-                onClick={() => setIsRecordModalOpen(false)} 
-                className="h-12 w-12 rounded-full border border-white/10 flex items-center justify-center text-xl hover:bg-white/5 transition-colors"
+
+              <button
+                onClick={() => setIsRecordModalOpen(false)}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 text-lg transition-colors hover:bg-white/5"
               >
                 ✕
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 py-8 pb-32">
+            <div className="flex-1 overflow-y-auto px-4 py-4 pb-24">
               <div className="mx-auto max-w-md">
                 <ActionPanel 
                   room={room} 

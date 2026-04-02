@@ -264,17 +264,17 @@ export default function ActionPanel({
   return (
     <section
       ref={panelRef}
-      className={`rounded-[30px] border p-4 transition-all duration-500 ${
+      className={`rounded-[28px] border p-3.5 transition-all duration-500 ${
         recentlySaved
           ? 'border-[#B6FF00] bg-[#B6FF00]/10'
           : 'border-white/10 bg-white/5 shadow-2xl'
       }`}
     >
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2">
         {[1, 2, 3].map((s) => (
           <div
             key={s}
-            className={`h-1 flex-1 rounded-full transition-all ${
+            className={`h-0.5 flex-1 rounded-full transition-all ${
               step >= s ? 'bg-[#B6FF00]' : 'bg-white/10'
             }`}
           />
@@ -293,7 +293,7 @@ export default function ActionPanel({
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {step === 1 && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             <h3 className="text-xl font-bold text-white">這把結果是？</h3>
@@ -386,10 +386,10 @@ export default function ActionPanel({
         )}
 
         {step === 3 && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+          <div className="space-y-3 animate-in fade-in slide-in-from-right-4">
             {supportsWinMeta ? (
               <>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2.5">
                   <WheelSelector
                     label="台數"
                     value={taiCount}
@@ -405,15 +405,15 @@ export default function ActionPanel({
                   />
                 </div>
 
-                <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-3">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex gap-2">
+                <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="flex gap-1.5">
                       {TILE_GROUPS.map((group) => (
                         <button
                           key={group.key}
                           type="button"
                           onClick={() => setActiveTileGroup(group.key)}
-                          className={`rounded-full px-3 py-2 text-sm font-bold transition ${
+                          className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
                             activeTileGroup === group.key
                               ? 'bg-[#B6FF00] text-black'
                               : 'border border-white/10 bg-black/25 text-white'
@@ -425,17 +425,15 @@ export default function ActionPanel({
                     </div>
 
                     {winningTile ? (
-                      <div className="rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-bold text-neutral-300">
+                      <div className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[11px] font-bold text-neutral-300">
                         {winningTile}
                       </div>
                     ) : null}
                   </div>
 
                   <div
-                    className={`grid gap-3 ${
-                      activeTileGroup === 'honor'
-                        ? 'grid-cols-4'
-                        : 'grid-cols-3'
+                    className={`grid gap-2.5 ${
+                      activeTileGroup === 'honor' ? 'grid-cols-4' : 'grid-cols-3'
                     }`}
                   >
                     {currentTileGroup.tiles.map((tile) => (
@@ -443,20 +441,22 @@ export default function ActionPanel({
                         key={tile}
                         type="button"
                         onClick={() => setWinningTile(tile)}
-                        className={`h-16 rounded-[20px] border text-xl font-black transition active:scale-[0.98] ${
+                        className={`h-14 rounded-[18px] border text-lg font-black transition active:scale-[0.98] ${
                           winningTile === tile
-                            ? 'border-transparent bg-[#B6FF00] text-black shadow-[0_10px_30px_rgba(182,255,0,0.18)]'
+                            ? 'border-transparent bg-[#B6FF00] text-black shadow-[0_8px_24px_rgba(182,255,0,0.16)]'
                             : 'border-white/10 bg-black/30 text-white'
                         }`}
                       >
-                        {activeTileGroup === 'honor' ? tile : tile.replace(/(萬|筒|條)/, '')}
+                        {activeTileGroup === 'honor'
+                          ? tile
+                          : tile.replace(/(萬|筒|條)/, '')}
                       </button>
                     ))}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4 text-sm text-neutral-400">
+              <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-3 text-sm text-neutral-400">
                 流局不需填寫台數、聽型與胡牌張。
               </div>
             )}
@@ -465,12 +465,12 @@ export default function ActionPanel({
               <button
                 type="button"
                 onClick={() => setShowExtras(true)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-white transition active:scale-[0.99]"
+                className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 text-sm font-bold text-white transition active:scale-[0.99]"
               >
                 更多紀錄（相公 / 備註）
               </button>
             ) : (
-              <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+              <div className="space-y-4 rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-white">本手有人相公嗎？</p>
@@ -569,18 +569,18 @@ export default function ActionPanel({
               </div>
             )}
 
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3 pt-0.5">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="flex-1 rounded-2xl bg-white/5 py-4 font-bold"
+                className="flex-1 rounded-2xl bg-white/5 py-3.5 font-bold"
               >
                 重選
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-[2] rounded-2xl bg-[#B6FF00] py-4 font-bold text-black shadow-xl shadow-[#B6FF00]/20 disabled:opacity-60"
+                className="flex-[2] rounded-2xl bg-[#B6FF00] py-3.5 font-bold text-black shadow-xl shadow-[#B6FF00]/20 disabled:opacity-60"
               >
                 {loading ? '紀錄中...' : '確認送出'}
               </button>
