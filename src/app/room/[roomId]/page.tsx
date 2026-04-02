@@ -20,6 +20,35 @@ const AVATAR_BG_CLASSES = [
   'bg-pink-400 text-black',
 ];
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (!error) return fallback;
+
+  if (typeof error === 'string') return error;
+
+  if (error instanceof Error) return error.message || fallback;
+
+  if (typeof error === 'object') {
+    const err = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+      error_description?: string;
+    };
+
+    return (
+      err.message ||
+      err.details ||
+      err.hint ||
+      err.error_description ||
+      err.code ||
+      fallback
+    );
+  }
+
+  return fallback;
+}
+
 export default function RoomPage() {
   const params = useParams();
   const roomId = params.roomId as string;
@@ -31,9 +60,18 @@ export default function RoomPage() {
   const [currentUserName, setCurrentUserName] = useState('');
   const [loading, setLoading] = useState(true);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
+
   const [undoLoading, setUndoLoading] = useState(false);
   const [undoMessage, setUndoMessage] = useState('');
   const [undoError, setUndoError] = useState('');
+
+  const [finishLoading, setFinishLoading] = useState(false);
+  const [finishMessage, setFinishMessage] = useState('');
+  const [finishError, setFinishError] = useState('');
+
+  const [saveMatchLoading, setSaveMatchLoading] = useState(false);
+  const [saveMatchMessage, setSaveMatchMessage] = useState('');
+  const [saveMatchError, setSaveMatchError] = useState('');
 
   const fetchRoomData = useCallback(async () => {
     if (!roomId) return;
@@ -63,7 +101,7 @@ export default function RoomPage() {
       if (recordsRes.data) setRecords(recordsRes.data);
       if (scoreChangesRes.data) setScoreChanges(scoreChangesRes.data);
     } catch (e) {
-      console.error(e);
+      console.error('fetchRoomData failed:', e);
     } finally {
       setLoading(false);
     }
@@ -155,6 +193,10 @@ export default function RoomPage() {
     setUndoLoading(true);
     setUndoError('');
     setUndoMessage('');
+    setFinishError('');
+    setFinishMessage('');
+    setSaveMatchError('');
+    setSaveMatchMessage('');
 
     try {
       const restoredHandNo = Math.max(0, room.current_hand_no - 1);
@@ -164,27 +206,21 @@ export default function RoomPage() {
         .delete()
         .eq('hand_id', lastRecord.hand_id);
 
-      if (scoreChangesDeleteError) {
-        throw scoreChangesDeleteError;
-      }
+      if (scoreChangesDeleteError) throw scoreChangesDeleteError;
 
       const { error: recordDeleteError } = await supabase
         .from('records')
         .delete()
         .eq('id', lastRecord.id);
 
-      if (recordDeleteError) {
-        throw recordDeleteError;
-      }
+      if (recordDeleteError) throw recordDeleteError;
 
       const { error: handDeleteError } = await supabase
         .from('hands')
         .delete()
         .eq('id', lastRecord.hand_id);
 
-      if (handDeleteError) {
-        throw handDeleteError;
-      }
+      if (handDeleteError) throw handDeleteError;
 
       const { error: roomRollbackError } = await supabase
         .from('rooms')
@@ -197,19 +233,240 @@ export default function RoomPage() {
         })
         .eq('id', room.id);
 
-      if (roomRollbackError) {
-        throw roomRollbackError;
-      }
+      if (roomRollbackError) throw roomRollbackError;
 
       setUndoMessage('已撤銷最後一手');
       await fetchRoomData();
     } catch (error) {
       console.error('Undo last hand failed:', error);
-      setUndoError('撤銷失敗，請稍後再試');
+      setUndoError(getErrorMessage(error, '撤銷失敗，請稍後再試'));
     } finally {
       setUndoLoading(false);
     }
   }, [room, lastRecord, undoLoading, fetchRoomData]);
+
+  const handleFinishRoom = useCallback(async () => {
+    if (!room || !isOwner || finishLoading) return;
+
+    if (room.status === 'finished') {
+      setFinishError('');
+      setFinishMessage('此對局已經結束');
+      return;
+    }
+
+    if (records.length === 0) {
+      setFinishError('至少要有一筆紀錄後，才能結束對局');
+      return;
+    }
+
+    const confirmed = window.confirm('確定要結束本場對局嗎？結束後將無法再新增手牌紀錄。');
+    if (!confirmed) return;
+
+    setFinishLoading(true);
+    setFinishError('');
+    setFinishMessage('');
+    setUndoError('');
+    setUndoMessage('');
+    setSaveMatchError('');
+    setSaveMatchMessage('');
+
+    try {
+      const { error } = await supabase
+        .from('rooms')
+        .update({ status: 'finished' })
+        .eq('id', room.id);
+
+      if (error) throw error;
+
+      setFinishMessage('本場對局已結束');
+      await fetchRoomData();
+    } catch (error) {
+      console.error('Finish room failed:', error);
+      setFinishError(getErrorMessage(error, '結束對局失敗，請稍後再試'));
+    } finally {
+      setFinishLoading(false);
+    }
+  }, [room, isOwner, finishLoading, records.length, fetchRoomData]);
+
+  const handleSaveMatch = useCallback(async () => {
+    if (!room || !isOwner || saveMatchLoading) return;
+
+    if (room.status !== 'finished') {
+      setSaveMatchError('請先完成整場對局，結束後才能保存');
+      return;
+    }
+
+    if (records.length === 0 || players.length === 0) {
+      setSaveMatchError('目前沒有可保存的完整對局資料');
+      return;
+    }
+
+    setSaveMatchLoading(true);
+    setSaveMatchError('');
+    setSaveMatchMessage('');
+    setUndoError('');
+    setUndoMessage('');
+    setFinishError('');
+    setFinishMessage('');
+
+    try {
+      const scoreMap = new Map<number, number>();
+      scoreChanges.forEach((change) => {
+        scoreMap.set(
+          change.seat_index,
+          (scoreMap.get(change.seat_index) ?? 0) + change.delta_score
+        );
+      });
+
+      const finalPlayers = [...players]
+        .sort((a, b) => a.seat_index - b.seat_index)
+        .map((player) => ({
+          ...player,
+          final_score: scoreMap.get(player.seat_index) ?? 0,
+        }));
+
+      const rankedPlayers = [...finalPlayers]
+        .sort((a, b) => {
+          if (b.final_score !== a.final_score) return b.final_score - a.final_score;
+          return a.seat_index - b.seat_index;
+        })
+        .map((player, index) => ({
+          ...player,
+          final_rank: index + 1,
+        }));
+
+      const rankBySeat = new Map<number, number>();
+      rankedPlayers.forEach((player) => {
+        rankBySeat.set(player.seat_index, player.final_rank);
+      });
+
+      const matchTitle = `${new Date().toLocaleDateString('zh-TW')} 對局紀錄`;
+
+      const { data: insertedMatch, error: matchError } = await supabase
+        .from('matches')
+        .insert({
+          owner_user_id: null,
+          source_room_id: room.id,
+          title: matchTitle,
+          status: 'finished',
+          is_public: false,
+          base_score: room.base_score,
+          tai_unit_amount: room.tai_unit_amount,
+          started_at: room.created_at,
+          finished_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (matchError || !insertedMatch) {
+        throw matchError ?? new Error('建立 match 失敗');
+      }
+
+      const matchId = insertedMatch.id;
+
+      const { error: matchPlayersError } = await supabase
+        .from('match_players')
+        .insert(
+          finalPlayers.map((player) => ({
+            match_id: matchId,
+            user_id: null,
+            player_name: player.player_name,
+            seat_index: player.seat_index,
+            final_score: player.final_score,
+            final_rank: rankBySeat.get(player.seat_index) ?? null,
+            is_owner: player.is_owner,
+          }))
+        );
+
+      if (matchPlayersError) {
+        throw matchPlayersError;
+      }
+
+      const sortedRecords = [...records].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      // 改成 hand_id 為核心做 mapping，避免 record.id / hand_id 來回找造成錯配
+      const handIdToSavedMatchRecordId = new Map<string, string>();
+      const handIdToHandNo = new Map<string, number>();
+
+      for (let index = 0; index < sortedRecords.length; index += 1) {
+        const record = sortedRecords[index];
+        const handNo = index + 1;
+
+        const { data: insertedRecord, error: matchRecordError } = await supabase
+          .from('match_records')
+          .insert({
+            match_id: matchId,
+            hand_no: handNo,
+            result_type: record.result_type,
+            winner_seat: record.winner_seat,
+            loser_seat: record.loser_seat,
+            tai_count: record.tai_count,
+            wait_type: record.wait_type,
+            winning_tile: record.winning_tile,
+            note: record.note,
+            misdeal_seat: record.misdeal_seat,
+            misdeal_note: record.misdeal_note,
+            created_by_name: record.created_by_name,
+            round_wind_before: record.round_wind_before,
+            dealer_seat_index_before: record.dealer_seat_index_before,
+            dealer_streak_before: record.dealer_streak_before,
+            round_wind_after: record.round_wind_after,
+            dealer_seat_index_after: record.dealer_seat_index_after,
+            dealer_streak_after: record.dealer_streak_after,
+            created_at: record.created_at,
+          })
+          .select()
+          .single();
+
+        if (matchRecordError || !insertedRecord) {
+          throw matchRecordError ?? new Error('建立 match_record 失敗');
+        }
+
+        handIdToSavedMatchRecordId.set(record.hand_id, insertedRecord.id);
+        handIdToHandNo.set(record.hand_id, handNo);
+      }
+
+      const scoreChangeRows = scoreChanges
+        .slice()
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        .map((change) => {
+          const savedMatchRecordId = handIdToSavedMatchRecordId.get(change.hand_id);
+          const handNo = handIdToHandNo.get(change.hand_id);
+
+          if (!savedMatchRecordId || !handNo) {
+            throw new Error(`找不到 hand_id=${change.hand_id} 對應的 saved match_record`);
+          }
+
+          return {
+            match_id: matchId,
+            match_record_id: savedMatchRecordId,
+            hand_no: handNo,
+            seat_index: change.seat_index,
+            delta_score: change.delta_score,
+            created_at: change.created_at,
+          };
+        });
+
+      if (scoreChangeRows.length > 0) {
+        const { error: matchScoreChangesError } = await supabase
+          .from('match_score_changes')
+          .insert(scoreChangeRows);
+
+        if (matchScoreChangesError) {
+          throw matchScoreChangesError;
+        }
+      }
+
+      setSaveMatchMessage('本場對局已成功保存');
+    } catch (error) {
+      console.error('Save match failed:', error);
+      setSaveMatchError(getErrorMessage(error, '保存本場對局失敗，請稍後再試'));
+    } finally {
+      setSaveMatchLoading(false);
+    }
+  }, [room, isOwner, records, players, scoreChanges, saveMatchLoading]);
 
   if (loading || !room) {
     return (
@@ -364,14 +621,60 @@ export default function RoomPage() {
               </div>
             ) : null}
 
-            <div className="grid grid-cols-3 gap-3">
+            {finishMessage ? (
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-200">
+                {finishMessage}
+              </div>
+            ) : null}
+
+            {finishError ? (
+              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-300">
+                {finishError}
+              </div>
+            ) : null}
+
+            {saveMatchMessage ? (
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-300">
+                {saveMatchMessage}
+              </div>
+            ) : null}
+
+            {saveMatchError ? (
+              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-300">
+                {saveMatchError}
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleSaveMatch}
+              disabled={room.status !== 'finished' || saveMatchLoading}
+              className="w-full rounded-full border border-cyan-400/20 bg-cyan-400/10 py-4 text-sm font-black tracking-[0.15em] text-cyan-200 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saveMatchLoading
+                ? '保存中...'
+                : room.status === 'finished'
+                  ? '保存本場對局'
+                  : '結束後可保存'}
+            </button>
+
+            <div className="grid grid-cols-4 gap-3">
               <button
                 type="button"
                 onClick={handleUndoLastHand}
                 disabled={!lastRecord || undoLoading}
-                className="rounded-full border border-white/10 bg-white/5 py-4 text-sm font-black tracking-[0.15em] text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-full border border-white/10 bg-white/5 py-4 text-sm font-black tracking-[0.12em] text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {undoLoading ? '撤銷中...' : '↶ 撤銷'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleFinishRoom}
+                disabled={room.status === 'finished' || finishLoading}
+                className="rounded-full border border-amber-400/20 bg-amber-400/10 py-4 text-sm font-black tracking-[0.12em] text-amber-200 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {finishLoading ? '結束中...' : room.status === 'finished' ? '已結束' : '結束對局'}
               </button>
 
               <motion.button
@@ -387,7 +690,7 @@ export default function RoomPage() {
         </div>
       ) : null}
 
-      <section className="mx-auto max-w-4xl space-y-12 px-4 pb-44 pt-10 sm:px-6">
+      <section className="mx-auto max-w-4xl space-y-12 px-4 pb-52 pt-10 sm:px-6">
         <div className="flex items-center gap-4">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/10" />
           <span className="text-[10px] font-bold uppercase tracking-[0.5em] text-neutral-600">
