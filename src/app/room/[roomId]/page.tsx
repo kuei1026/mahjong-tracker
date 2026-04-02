@@ -31,6 +31,9 @@ export default function RoomPage() {
   const [currentUserName, setCurrentUserName] = useState('');
   const [loading, setLoading] = useState(true);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
+  const [undoLoading, setUndoLoading] = useState(false);
+  const [undoMessage, setUndoMessage] = useState('');
+  const [undoError, setUndoError] = useState('');
 
   const fetchRoomData = useCallback(async () => {
     if (!roomId) return;
@@ -134,6 +137,79 @@ export default function RoomPage() {
   const dealerPlayer = useMemo(() => {
     return playersWithScores.find((player) => player.seat_index === currentDealerSeatIndex) ?? null;
   }, [playersWithScores, currentDealerSeatIndex]);
+
+  const lastRecord = useMemo(() => {
+    if (records.length === 0) return null;
+
+    return [...records].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0];
+  }, [records]);
+
+  const handleUndoLastHand = useCallback(async () => {
+    if (!room || !lastRecord || undoLoading) return;
+
+    const confirmed = window.confirm('確定要撤銷最後一手紀錄嗎？');
+    if (!confirmed) return;
+
+    setUndoLoading(true);
+    setUndoError('');
+    setUndoMessage('');
+
+    try {
+      const restoredHandNo = Math.max(0, room.current_hand_no - 1);
+
+      const { error: scoreChangesDeleteError } = await supabase
+        .from('score_changes')
+        .delete()
+        .eq('hand_id', lastRecord.hand_id);
+
+      if (scoreChangesDeleteError) {
+        throw scoreChangesDeleteError;
+      }
+
+      const { error: recordDeleteError } = await supabase
+        .from('records')
+        .delete()
+        .eq('id', lastRecord.id);
+
+      if (recordDeleteError) {
+        throw recordDeleteError;
+      }
+
+      const { error: handDeleteError } = await supabase
+        .from('hands')
+        .delete()
+        .eq('id', lastRecord.hand_id);
+
+      if (handDeleteError) {
+        throw handDeleteError;
+      }
+
+      const { error: roomRollbackError } = await supabase
+        .from('rooms')
+        .update({
+          current_hand_no: restoredHandNo,
+          round_wind: lastRecord.round_wind_before ?? 0,
+          dealer_seat_index: lastRecord.dealer_seat_index_before ?? 0,
+          dealer_streak: lastRecord.dealer_streak_before ?? 0,
+          status: 'active',
+        })
+        .eq('id', room.id);
+
+      if (roomRollbackError) {
+        throw roomRollbackError;
+      }
+
+      setUndoMessage('已撤銷最後一手');
+      await fetchRoomData();
+    } catch (error) {
+      console.error('Undo last hand failed:', error);
+      setUndoError('撤銷失敗，請稍後再試');
+    } finally {
+      setUndoLoading(false);
+    }
+  }, [room, lastRecord, undoLoading, fetchRoomData]);
 
   if (loading || !room) {
     return (
@@ -253,7 +329,7 @@ export default function RoomPage() {
                     {p.player_name}
                   </p>
                   <p
-                    className={`text-2xl font-black tracking-tighter font-mono ${
+                    className={`font-mono text-2xl font-black tracking-tighter ${
                       p.totalScore >= 0 ? 'text-[#B6FF00]' : 'text-[#FF5F5F]'
                     }`}
                   >
@@ -273,19 +349,45 @@ export default function RoomPage() {
         </div>
       </section>
 
-      {isOwner && room.status !== 'finished' && (
+      {isOwner ? (
         <div className="fixed bottom-10 left-0 right-0 z-40 flex justify-center px-6 sm:px-8">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setIsRecordModalOpen(true)}
-            className="w-full max-w-md rounded-full bg-[#B6FF00] py-5 text-base font-black tracking-[0.2em] text-black shadow-[0_15px_40px_rgba(182,255,0,0.3)] transition-all active:bg-[#D9FF7A]"
-          >
-            ＋ 紀錄此手結果
-          </motion.button>
-        </div>
-      )}
+          <div className="flex w-full max-w-md flex-col gap-3">
+            {undoMessage ? (
+              <div className="rounded-2xl border border-lime-400/20 bg-lime-400/10 px-4 py-3 text-sm font-medium text-lime-300">
+                {undoMessage}
+              </div>
+            ) : null}
 
-      <section className="mx-auto max-w-4xl space-y-12 px-4 pb-40 pt-10 sm:px-6">
+            {undoError ? (
+              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-300">
+                {undoError}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={handleUndoLastHand}
+                disabled={!lastRecord || undoLoading}
+                className="rounded-full border border-white/10 bg-white/5 py-4 text-sm font-black tracking-[0.15em] text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {undoLoading ? '撤銷中...' : '↶ 撤銷'}
+              </button>
+
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setIsRecordModalOpen(true)}
+                disabled={room.status === 'finished'}
+                className="col-span-2 rounded-full bg-[#B6FF00] py-5 text-base font-black tracking-[0.2em] text-black shadow-[0_15px_40px_rgba(182,255,0,0.3)] transition-all active:bg-[#D9FF7A] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                ＋ 紀錄此手結果
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="mx-auto max-w-4xl space-y-12 px-4 pb-44 pt-10 sm:px-6">
         <div className="flex items-center gap-4">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/10" />
           <span className="text-[10px] font-bold uppercase tracking-[0.5em] text-neutral-600">
