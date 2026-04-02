@@ -5,6 +5,7 @@ export interface ScoreCalculationInput {
   winnerSeat: number | null;
   loserSeat: number | null;
   taiCount: number;
+  baseScore: number;       // 新增
   taiUnitAmount: number;
   misdealPenalty: number;
 }
@@ -22,6 +23,7 @@ export function calculateScoreChanges(
     winnerSeat,
     loserSeat,
     taiCount,
+    baseScore,
     taiUnitAmount,
     misdealPenalty,
   } = input;
@@ -40,18 +42,18 @@ export function calculateScoreChanges(
       throw new Error('winnerSeat is required for tsumo.');
     }
 
-    const unit = taiCount * taiUnitAmount;
+    const perLoserPay = baseScore + taiCount * taiUnitAmount;
 
     for (let seat = 0; seat < 4; seat += 1) {
       if (seat === winnerSeat) {
         deltas.push({
           seat_index: seat,
-          delta_score: unit * 3,
+          delta_score: perLoserPay * 3,
         });
       } else {
         deltas.push({
           seat_index: seat,
-          delta_score: -unit,
+          delta_score: -perLoserPay,
         });
       }
     }
@@ -68,18 +70,18 @@ export function calculateScoreChanges(
       throw new Error('winnerSeat and loserSeat cannot be the same.');
     }
 
-    const unit = taiCount * taiUnitAmount;
+    const totalPay = baseScore + taiCount * taiUnitAmount;
 
     for (let seat = 0; seat < 4; seat += 1) {
       if (seat === winnerSeat) {
         deltas.push({
           seat_index: seat,
-          delta_score: unit,
+          delta_score: totalPay,
         });
       } else if (seat === loserSeat) {
         deltas.push({
           seat_index: seat,
-          delta_score: -unit,
+          delta_score: -totalPay,
         });
       } else {
         deltas.push({

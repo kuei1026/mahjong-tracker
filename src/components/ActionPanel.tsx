@@ -81,48 +81,94 @@ export default function ActionPanel({ room, players, onRecorded }: ActionPanelPr
   };
 
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      // ... 保持你原本的 Supabase 寫入邏輯不變 ...
-      // (為了節省篇幅，此處省略與你原始程式碼相同的紀錄邏輯部分)
-      
-      const nextHandNo = room.current_hand_no + 1;
-      const { data: handData, error: handError } = await supabase
-        .from('hands').insert({ room_id: room.id, hand_no: nextHandNo, status: 'locked' }).select().single();
-      if (handError || !handData) throw handError;
+  e.preventDefault();
+  setLoading(true);
+  setFeedbackMessage('');
+  setFeedbackType('');
 
-      const calculatedChanges = calculateScoreChanges({
-        resultType, winnerSeat, loserSeat, 
-        taiCount: requiresTaiCount ? taiCount : 0,
-        taiUnitAmount: room.tai_unit_amount,
-        misdealPenalty: room.misdeal_penalty,
-      });
+  try {
+    const nextHandNo = room.current_hand_no + 1;
 
-      await supabase.from('records').insert({
-        hand_id: handData.id, room_id: room.id, result_type: resultType,
-        winner_seat: winnerSeat, loser_seat: loserSeat,
+    const { data: handData, error: handError } = await supabase
+      .from('hands')
+      .insert({
+        room_id: room.id,
+        hand_no: nextHandNo,
+        status: 'locked',
+      })
+      .select()
+      .single();
+
+    if (handError || !handData) {
+      throw handError ?? new Error('建立 hand 失敗');
+    }
+
+    const calculatedChanges = calculateScoreChanges({
+      resultType,
+      winnerSeat,
+      loserSeat,
+      taiCount: requiresTaiCount ? taiCount : 0,
+      baseScore: room.base_score ?? 0, // 新增
+      taiUnitAmount: room.tai_unit_amount,
+      misdealPenalty: room.misdeal_penalty,
+    });
+
+    const { error: recordError } = await supabase
+      .from('records')
+      .insert({
+        hand_id: handData.id,
+        room_id: room.id,
+        result_type: resultType,
+        winner_seat: winnerSeat,
+        loser_seat: loserSeat,
         tai_count: requiresTaiCount ? taiCount : 0,
-        note: note.trim() || null, winning_tile: supportsWinningTile ? winningTile : null,
+        note: note.trim() || null,
+        winning_tile: supportsWinningTile ? winningTile : null,
+        created_by_name: room.owner_name, // 很重要
       });
 
-      await supabase.from('score_changes').insert(
-        calculatedChanges.map(item => ({ hand_id: handData.id, room_id: room.id, seat_index: item.seat_index, delta_score: item.delta_score }))
+    if (recordError) {
+      throw recordError;
+    }
+
+    const { error: scoreChangeError } = await supabase
+      .from('score_changes')
+      .insert(
+        calculatedChanges.map((item) => ({
+          hand_id: handData.id,
+          room_id: room.id,
+          seat_index: item.seat_index,
+          delta_score: item.delta_score,
+        }))
       );
 
-      await supabase.from('rooms').update({ current_hand_no: nextHandNo }).eq('id', room.id);
-
-      resetForm();
-      setRecentlySaved(true);
-      triggerHaptic(60);
-      await onRecorded();
-    } catch (err) {
-      setFeedbackType('error');
-      setFeedbackMessage('紀錄失敗');
-      triggerHaptic([50, 50]);
-    } finally {
-      setLoading(false);
+    if (scoreChangeError) {
+      throw scoreChangeError;
     }
+
+    const { error: roomUpdateError } = await supabase
+      .from('rooms')
+      .update({ current_hand_no: nextHandNo })
+      .eq('id', room.id);
+
+    if (roomUpdateError) {
+      throw roomUpdateError;
+    }
+
+    resetForm();
+    setRecentlySaved(true);
+    setFeedbackType('success');
+    setFeedbackMessage('紀錄成功');
+    triggerHaptic(60);
+    await onRecorded();
+  } catch (err) {
+    console.error('Record submit failed:', err);
+    setFeedbackType('error');
+    setFeedbackMessage('紀錄失敗');
+    triggerHaptic([50, 50]);
+  } finally {
+    setLoading(false);
+  }
   };
 
   return (
