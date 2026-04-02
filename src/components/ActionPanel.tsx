@@ -4,7 +4,6 @@ import { FormEvent, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { calculateScoreChanges, type RecordType } from '@/lib/gameLogic';
 import type { Room, RoomPlayer, WaitType } from '@/types/game';
-import TilePicker from '@/components/TilePicker';
 import WheelSelector, { type WheelOption } from '@/components/WheelSelector';
 
 interface ActionPanelProps {
@@ -33,6 +32,31 @@ const WAIT_TYPE_OPTIONS: WheelOption<WaitType>[] = [
   { label: '很多洞', value: 'multi_wait' },
 ];
 
+const TILE_GROUPS = [
+  {
+    key: 'wan',
+    label: '萬子',
+    tiles: ['1萬', '2萬', '3萬', '4萬', '5萬', '6萬', '7萬', '8萬', '9萬'],
+  },
+  {
+    key: 'tong',
+    label: '筒子',
+    tiles: ['1筒', '2筒', '3筒', '4筒', '5筒', '6筒', '7筒', '8筒', '9筒'],
+  },
+  {
+    key: 'tiao',
+    label: '條子',
+    tiles: ['1條', '2條', '3條', '4條', '5條', '6條', '7條', '8條', '9條'],
+  },
+  {
+    key: 'honor',
+    label: '字牌',
+    tiles: ['東', '南', '西', '北', '中', '發', '白'],
+  },
+] as const;
+
+type TileGroupKey = (typeof TILE_GROUPS)[number]['key'];
+
 export default function ActionPanel({
   room,
   players,
@@ -46,6 +70,7 @@ export default function ActionPanel({
   const [taiCount, setTaiCount] = useState(1);
   const [waitType, setWaitType] = useState<WaitType>('single_wait');
   const [winningTile, setWinningTile] = useState<string>('');
+  const [activeTileGroup, setActiveTileGroup] = useState<TileGroupKey>('wan');
 
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,6 +90,11 @@ export default function ActionPanel({
   const sortedPlayers = useMemo(
     () => [...players].sort((a, b) => a.seat_index - b.seat_index),
     [players]
+  );
+
+  const currentTileGroup = useMemo(
+    () => TILE_GROUPS.find((group) => group.key === activeTileGroup) ?? TILE_GROUPS[0],
+    [activeTileGroup]
   );
 
   const requiresWinner = resultType === 'tsumo' || resultType === 'ron';
@@ -102,6 +132,7 @@ export default function ActionPanel({
     setTaiCount(1);
     setWaitType('single_wait');
     setWinningTile('');
+    setActiveTileGroup('wan');
     setNote('');
     setHasMisdeal(false);
     setMisdealSeat(null);
@@ -178,7 +209,7 @@ export default function ActionPanel({
           loser_seat: loserSeat,
           tai_count: requiresTaiCount ? taiCount : 0,
           wait_type: supportsWinMeta ? waitType : null,
-          winning_tile: supportsWinMeta ? winningTile.trim() || null : null,
+          winning_tile: supportsWinMeta ? winningTile || null : null,
           note: showExtras ? note.trim() || null : null,
           misdeal_seat: showExtras && hasMisdeal ? misdealSeat : null,
           misdeal_note:
@@ -233,17 +264,17 @@ export default function ActionPanel({
   return (
     <section
       ref={panelRef}
-      className={`rounded-[32px] border p-5 transition-all duration-500 ${
+      className={`rounded-[30px] border p-4 transition-all duration-500 ${
         recentlySaved
           ? 'border-[#B6FF00] bg-[#B6FF00]/10'
           : 'border-white/10 bg-white/5 shadow-2xl'
       }`}
     >
-      <div className="mb-5 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         {[1, 2, 3].map((s) => (
           <div
             key={s}
-            className={`h-1.5 flex-1 rounded-full transition-all ${
+            className={`h-1 flex-1 rounded-full transition-all ${
               step >= s ? 'bg-[#B6FF00]' : 'bg-white/10'
             }`}
           />
@@ -252,7 +283,7 @@ export default function ActionPanel({
 
       {feedbackMessage && feedbackType ? (
         <div
-          className={`mb-4 rounded-2xl px-4 py-3 text-sm font-medium ${
+          className={`mb-3 rounded-2xl px-4 py-3 text-sm font-medium ${
             feedbackType === 'success'
               ? 'border border-lime-400/20 bg-lime-400/10 text-lime-300'
               : 'border border-red-400/20 bg-red-400/10 text-red-300'
@@ -262,7 +293,7 @@ export default function ActionPanel({
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-4">
         {step === 1 && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             <h3 className="text-xl font-bold text-white">這把結果是？</h3>
@@ -289,7 +320,7 @@ export default function ActionPanel({
         )}
 
         {step === 2 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+          <div className="space-y-5 animate-in fade-in slide-in-from-right-4">
             {requiresWinner && (
               <div className="space-y-3">
                 <p className="text-sm text-neutral-400">是誰胡了？</p>
@@ -374,28 +405,58 @@ export default function ActionPanel({
                   />
                 </div>
 
-                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-                  <div className="mb-3">
-                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
-                      胡哪張
-                    </p>
+                <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex gap-2">
+                      {TILE_GROUPS.map((group) => (
+                        <button
+                          key={group.key}
+                          type="button"
+                          onClick={() => setActiveTileGroup(group.key)}
+                          className={`rounded-full px-3 py-2 text-sm font-bold transition ${
+                            activeTileGroup === group.key
+                              ? 'bg-[#B6FF00] text-black'
+                              : 'border border-white/10 bg-black/25 text-white'
+                          }`}
+                        >
+                          {group.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {winningTile ? (
+                      <div className="rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-bold text-neutral-300">
+                        {winningTile}
+                      </div>
+                    ) : null}
                   </div>
 
-                  <input
-                    value={winningTile}
-                    onChange={(e) => setWinningTile(e.target.value)}
-                    placeholder="例如：3萬、7筒、北"
-                    className="mb-3 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-neutral-500"
-                  />
-
-                  <TilePicker
-                    value={winningTile || null}
-                    onChange={(value) => setWinningTile(value ?? '')}
-                  />
+                  <div
+                    className={`grid gap-3 ${
+                      activeTileGroup === 'honor'
+                        ? 'grid-cols-4'
+                        : 'grid-cols-3'
+                    }`}
+                  >
+                    {currentTileGroup.tiles.map((tile) => (
+                      <button
+                        key={tile}
+                        type="button"
+                        onClick={() => setWinningTile(tile)}
+                        className={`h-16 rounded-[20px] border text-xl font-black transition active:scale-[0.98] ${
+                          winningTile === tile
+                            ? 'border-transparent bg-[#B6FF00] text-black shadow-[0_10px_30px_rgba(182,255,0,0.18)]'
+                            : 'border-white/10 bg-black/30 text-white'
+                        }`}
+                      >
+                        {activeTileGroup === 'honor' ? tile : tile.replace(/(萬|筒|條)/, '')}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </>
             ) : (
-              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4 text-sm text-neutral-400">
+              <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4 text-sm text-neutral-400">
                 流局不需填寫台數、聽型與胡牌張。
               </div>
             )}
@@ -409,7 +470,7 @@ export default function ActionPanel({
                 更多紀錄（相公 / 備註）
               </button>
             ) : (
-              <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/5 p-4">
+              <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-white">本手有人相公嗎？</p>
@@ -508,7 +569,7 @@ export default function ActionPanel({
               </div>
             )}
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex gap-3 pt-1">
               <button
                 type="button"
                 onClick={() => setStep(1)}
