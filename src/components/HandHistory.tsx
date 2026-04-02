@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { getRoundLabel, getSeatWind } from '@/lib/gameLogic';
 import type { RecordItem, RoomPlayer, WaitType } from '@/types/game';
 
 interface HandHistoryProps {
@@ -10,9 +11,9 @@ interface HandHistoryProps {
 
 function getPlayerNameBySeat(
   players: RoomPlayer[],
-  seatIndex: number | null
+  seatIndex: number | null | undefined
 ): string {
-  if (seatIndex === null) return '-';
+  if (seatIndex === null || seatIndex === undefined) return '-';
   const matchedPlayer = players.find((player) => player.seat_index === seatIndex);
   return matchedPlayer?.player_name ?? `第 ${seatIndex + 1} 位`;
 }
@@ -63,6 +64,22 @@ function getSummary(record: RecordItem, players: RoomPlayer[]) {
     default:
       return '';
   }
+}
+
+function getRoundContext(record: RecordItem, players: RoomPlayer[]) {
+  const roundWind = record.round_wind_before ?? 0;
+  const dealerSeatIndex = record.dealer_seat_index_before ?? 0;
+  const dealerStreak = record.dealer_streak_before ?? 0;
+
+  const dealerName = getPlayerNameBySeat(players, dealerSeatIndex);
+  const dealerSeatWind = getSeatWind(dealerSeatIndex);
+
+  return {
+    roundLabel: getRoundLabel(roundWind, dealerSeatIndex),
+    dealerName,
+    dealerSeatWind,
+    dealerStreak,
+  };
 }
 
 export default function HandHistory({
@@ -119,6 +136,8 @@ export default function HandHistory({
             const showWinMeta =
               record.result_type === 'tsumo' || record.result_type === 'ron';
 
+            const roundContext = getRoundContext(record, players);
+
             return (
               <div
                 key={record.id}
@@ -130,10 +149,20 @@ export default function HandHistory({
                       <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs uppercase tracking-wide text-neutral-300">
                         第 {records.length - index} 手
                       </span>
+                      <span className="rounded-full border border-[#B6FF00]/20 bg-[#B6FF00]/10 px-3 py-1 text-xs font-bold text-[#B6FF00]">
+                        {roundContext.roundLabel}
+                      </span>
                       <span className="text-sm font-semibold text-[#B6FF00]">
                         {getResultLabel(record.result_type)}
                       </span>
                     </div>
+
+                    <p className="text-sm text-neutral-300">
+                      莊家：{roundContext.dealerName}（{roundContext.dealerSeatWind}）
+                      {roundContext.dealerStreak > 0
+                        ? ` · 莊家連 ${roundContext.dealerStreak}`
+                        : ''}
+                    </p>
 
                     <p className="text-sm text-neutral-200">
                       {getSummary(record, players)}
@@ -191,6 +220,8 @@ export default function HandHistory({
             const showWinMeta =
               record.result_type === 'tsumo' || record.result_type === 'ron';
 
+            const roundContext = getRoundContext(record, players);
+
             return (
               <div
                 key={record.id}
@@ -199,7 +230,14 @@ export default function HandHistory({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-white">
-                      第 {records.length - index} 手 · {getResultLabel(record.result_type)}
+                      第 {records.length - index} 手 · {roundContext.roundLabel} · {getResultLabel(record.result_type)}
+                    </p>
+
+                    <p className="mt-1 truncate text-sm text-neutral-400">
+                      莊家：{roundContext.dealerName}
+                      {roundContext.dealerStreak > 0
+                        ? ` · 莊家連 ${roundContext.dealerStreak}`
+                        : ''}
                     </p>
 
                     <p className="mt-1 truncate text-sm text-neutral-400">
