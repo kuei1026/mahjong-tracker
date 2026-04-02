@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { getSeatWind } from '@/lib/gameLogic';
 
 const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
 
@@ -14,6 +15,13 @@ function generateRoomCode(length = 6) {
   }
   return result;
 }
+
+type SeatAssignment = {
+  seatIndex: number;
+  playerName: string;
+};
+
+const SEATS = [0, 1, 2, 3] as const;
 
 export default function HomePage() {
   const router = useRouter();
@@ -27,6 +35,13 @@ export default function HomePage() {
   const [baseScore, setBaseScore] = useState(30);
   const [taiUnitAmount, setTaiUnitAmount] = useState(10);
 
+  const [dealerSeatIndex, setDealerSeatIndex] = useState(0);
+
+  const [seatEast, setSeatEast] = useState('');
+  const [seatSouth, setSeatSouth] = useState('');
+  const [seatWest, setSeatWest] = useState('');
+  const [seatNorth, setSeatNorth] = useState('');
+
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [joinUserName, setJoinUserName] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
@@ -38,8 +53,34 @@ export default function HomePage() {
     [player1, player2, player3, player4]
   );
 
+  const seatAssignments = useMemo<SeatAssignment[]>(
+    () => [
+      { seatIndex: 0, playerName: seatEast.trim() },
+      { seatIndex: 1, playerName: seatSouth.trim() },
+      { seatIndex: 2, playerName: seatWest.trim() },
+      { seatIndex: 3, playerName: seatNorth.trim() },
+    ],
+    [seatEast, seatSouth, seatWest, seatNorth]
+  );
+
+  const allNamedPlayersReady =
+    playerNames.filter(Boolean).length === 4 && new Set(playerNames).size === 4;
+
   const saveUserNameToLocalStorage = (name: string) => {
     localStorage.setItem(LOCAL_STORAGE_USER_NAME_KEY, name.trim());
+  };
+
+  const handleAutoSeat = () => {
+    if (!allNamedPlayersReady) {
+      setMessage('請先完整輸入 4 位且不重複的玩家名稱。');
+      return;
+    }
+
+    setSeatEast(playerNames[0]);
+    setSeatSouth(playerNames[1]);
+    setSeatWest(playerNames[2]);
+    setSeatNorth(playerNames[3]);
+    setMessage('');
   };
 
   const handleCreateRoom = async (event: FormEvent) => {
@@ -78,6 +119,24 @@ export default function HomePage() {
       return;
     }
 
+    if (seatAssignments.some((item) => !item.playerName)) {
+      setMessage('請完成東、南、西、北四個座位安排。');
+      return;
+    }
+
+    const assignedNames = seatAssignments.map((item) => item.playerName);
+
+    if (new Set(assignedNames).size !== 4) {
+      setMessage('座位安排不能重複，東南西北必須各是一位不同玩家。');
+      return;
+    }
+
+    const allAssignedFromPlayers = assignedNames.every((name) => playerNames.includes(name));
+    if (!allAssignedFromPlayers) {
+      setMessage('座位安排中的玩家必須來自上方輸入的 4 位玩家。');
+      return;
+    }
+
     setCreateLoading(true);
 
     try {
@@ -92,6 +151,10 @@ export default function HomePage() {
             owner_name: trimmedOwnerName,
             base_score: baseScore,
             tai_unit_amount: taiUnitAmount,
+            round_wind: 0,
+            dealer_seat_index: dealerSeatIndex,
+            dealer_streak: 0,
+            status: 'active',
           })
           .select()
           .single();
@@ -113,11 +176,11 @@ export default function HomePage() {
         throw new Error('建立房間失敗。');
       }
 
-      const playersPayload = playerNames.map((name, index) => ({
+      const playersPayload = seatAssignments.map((item) => ({
         room_id: roomId,
-        seat_index: index,
-        player_name: name,
-        is_owner: name === trimmedOwnerName,
+        seat_index: item.seatIndex,
+        player_name: item.playerName,
+        is_owner: item.playerName === trimmedOwnerName,
       }));
 
       const { error: playersError } = await supabase
@@ -201,10 +264,10 @@ export default function HomePage() {
         <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6">
           <h2 className="text-2xl font-black">建立房間</h2>
           <p className="mt-2 text-sm text-white/60">
-            先設定 4 位玩家與基本規則，快速開始一場牌局。
+            先設定 4 位玩家、座位與起莊，快速開始一場牌局。
           </p>
 
-          <form onSubmit={handleCreateRoom} className="mt-6 space-y-4">
+          <form onSubmit={handleCreateRoom} className="mt-6 space-y-5">
             <input
               className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
               value={ownerName}
@@ -212,30 +275,32 @@ export default function HomePage() {
               placeholder="房主名稱，例如：阿傑"
             />
 
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-              value={player1}
-              onChange={(e) => setPlayer1(e.target.value)}
-              placeholder="玩家 1"
-            />
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-              value={player2}
-              onChange={(e) => setPlayer2(e.target.value)}
-              placeholder="玩家 2"
-            />
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-              value={player3}
-              onChange={(e) => setPlayer3(e.target.value)}
-              placeholder="玩家 3"
-            />
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-              value={player4}
-              onChange={(e) => setPlayer4(e.target.value)}
-              placeholder="玩家 4"
-            />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <input
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                value={player1}
+                onChange={(e) => setPlayer1(e.target.value)}
+                placeholder="玩家 1"
+              />
+              <input
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                value={player2}
+                onChange={(e) => setPlayer2(e.target.value)}
+                placeholder="玩家 2"
+              />
+              <input
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                value={player3}
+                onChange={(e) => setPlayer3(e.target.value)}
+                placeholder="玩家 3"
+              />
+              <input
+                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                value={player4}
+                onChange={(e) => setPlayer4(e.target.value)}
+                placeholder="玩家 4"
+              />
+            </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
@@ -261,8 +326,137 @@ export default function HomePage() {
               </div>
             </div>
 
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-black">安排座位</h3>
+                  <p className="mt-1 text-sm text-white/60">
+                    請決定東、南、西、北各自是哪位玩家。
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAutoSeat}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white transition active:scale-[0.99]"
+                >
+                  自動帶入
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-[#B6FF00]">東</label>
+                  <select
+                    value={seatEast}
+                    onChange={(e) => setSeatEast(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                  >
+                    <option value="">請選擇玩家</option>
+                    {playerNames
+                      .filter(Boolean)
+                      .map((name) => (
+                        <option key={`east-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-[#67E8F9]">南</label>
+                  <select
+                    value={seatSouth}
+                    onChange={(e) => setSeatSouth(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                  >
+                    <option value="">請選擇玩家</option>
+                    {playerNames
+                      .filter(Boolean)
+                      .map((name) => (
+                        <option key={`south-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-[#FDBA74]">西</label>
+                  <select
+                    value={seatWest}
+                    onChange={(e) => setSeatWest(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                  >
+                    <option value="">請選擇玩家</option>
+                    {playerNames
+                      .filter(Boolean)
+                      .map((name) => (
+                        <option key={`west-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-[#FB7185]">北</label>
+                  <select
+                    value={seatNorth}
+                    onChange={(e) => setSeatNorth(e.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                  >
+                    <option value="">請選擇玩家</option>
+                    {playerNames
+                      .filter(Boolean)
+                      .map((name) => (
+                        <option key={`north-${name}`} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <h3 className="text-lg font-black">確認起莊</h3>
+              <p className="mt-1 text-sm text-white/60">
+                開局會從東風圈開始，請設定第一位莊家座位。
+              </p>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                {SEATS.map((seatIndex) => {
+                  const seatWind = getSeatWind(seatIndex);
+                  const seatPlayer = seatAssignments.find(
+                    (item) => item.seatIndex === seatIndex
+                  )?.playerName;
+
+                  return (
+                    <button
+                      key={seatIndex}
+                      type="button"
+                      onClick={() => setDealerSeatIndex(seatIndex)}
+                      className={`rounded-2xl border px-4 py-4 text-left transition ${
+                        dealerSeatIndex === seatIndex
+                          ? 'border-transparent bg-[#B6FF00] text-black'
+                          : 'border-white/10 bg-black/40 text-white'
+                      }`}
+                    >
+                      <div className="text-sm font-black">{seatWind}</div>
+                      <div className="mt-1 text-xs opacity-80">
+                        {seatPlayer || '尚未安排'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="rounded-2xl border border-lime-400/20 bg-lime-400/10 px-4 py-3 text-sm text-lime-300">
-              目前規則：1 底 {baseScore}，1 台 {taiUnitAmount}
+              目前規則：1 底 {baseScore}，1 台 {taiUnitAmount}｜起始局面：
+              {' '}
+              東風{getSeatWind(dealerSeatIndex)}
             </div>
 
             <button

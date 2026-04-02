@@ -10,6 +10,9 @@ export type WaitType =
   | 'triple_wait'
   | 'multi_wait';
 
+export type SeatWind = '東' | '南' | '西' | '北';
+export type RoundWind = '東' | '南' | '西' | '北';
+
 export interface Room {
   id: string;
   room_code: string;
@@ -18,6 +21,12 @@ export interface Room {
   status: RoomStatus;
   tai_unit_amount: number;
   current_hand_no: number;
+
+  // 新增：牌局狀態
+  round_wind?: number; // 0=東, 1=南, 2=西, 3=北
+  dealer_seat_index?: number; // 0=東, 1=南, 2=西, 3=北
+  dealer_streak?: number; // 初始為 0，續莊後 +1
+
   created_at: string;
   updated_at: string;
 }
@@ -25,7 +34,7 @@ export interface Room {
 export interface RoomPlayer {
   id: string;
   room_id: string;
-  seat_index: number;
+  seat_index: number; // 0=東, 1=南, 2=西, 3=北
   player_name: string;
   is_owner: boolean;
   created_at: string;
@@ -53,6 +62,16 @@ export interface RecordItem {
   misdeal_seat: number | null;
   misdeal_note: string | null;
   created_by_name: string;
+
+  // 新增：局面快照（before / after）
+  round_wind_before?: number | null;
+  dealer_seat_index_before?: number | null;
+  dealer_streak_before?: number | null;
+
+  round_wind_after?: number | null;
+  dealer_seat_index_after?: number | null;
+  dealer_streak_after?: number | null;
+
   created_at: string;
 }
 
@@ -63,4 +82,43 @@ export interface ScoreChange {
   seat_index: number;
   delta_score: number;
   created_at: string;
+}
+
+export interface ScoreCalculationInput {
+  resultType: RecordType;
+  winnerSeat: number | null;
+  loserSeat: number | null;
+  taiCount: number;
+  baseScore: number;
+  taiUnitAmount: number;
+}
+
+export interface ScoreDelta {
+  seat_index: number;
+  delta_score: number;
+}
+
+export interface GameState {
+  roundWind: RoundWind;
+  roundWindIndex: number;
+  dealerSeatIndex: number;
+  dealerSeatWind: SeatWind;
+  dealerStreak: number;
+  handIndex: number;
+}
+
+export interface AdvanceGameStateInput {
+  currentRoundWind: number; // 0~3
+  currentDealerSeatIndex: number; // 0~3
+  currentDealerStreak: number;
+  resultType: RecordType;
+  winnerSeat: number | null;
+}
+
+export interface AdvanceGameStateResult {
+  nextRoundWind: number;
+  nextDealerSeatIndex: number;
+  nextDealerStreak: number;
+  isDealerContinued: boolean;
+  isGameFinished: boolean;
 }

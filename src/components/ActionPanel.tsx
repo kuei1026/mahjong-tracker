@@ -1,8 +1,21 @@
 'use client';
 
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { supabase } from '@/lib/supabase';
-import { calculateScoreChanges, type RecordType } from '@/lib/gameLogic';
+import {
+  advanceGameState,
+  calculateScoreChanges,
+  getCurrentUserName,
+  getRoundLabel,
+  getSeatWind,
+  type RecordType,
+} from '@/lib/gameLogic';
 import type { Room, RoomPlayer, WaitType } from '@/types/game';
 import WheelSelector, { type WheelOption } from '@/components/WheelSelector';
 
@@ -102,11 +115,29 @@ export default function ActionPanel({
   const requiresTaiCount = resultType === 'tsumo' || resultType === 'ron';
   const supportsWinMeta = resultType === 'tsumo' || resultType === 'ron';
 
+  const currentRoundWind = room.round_wind ?? 0;
+  const currentDealerSeatIndex = room.dealer_seat_index ?? 0;
+  const currentDealerStreak = room.dealer_streak ?? 0;
+
+  const currentRoundLabel = getRoundLabel(currentRoundWind, currentDealerSeatIndex);
+  const currentDealerPlayer =
+    sortedPlayers.find((player) => player.seat_index === currentDealerSeatIndex) ?? null;
+
   const triggerHaptic = (pattern: number | number[]) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(pattern);
     }
   };
+
+  useEffect(() => {
+    if (!recentlySaved) return;
+
+    const timer = window.setTimeout(() => {
+      setRecentlySaved(false);
+    }, 1400);
+
+    return () => window.clearTimeout(timer);
+  }, [recentlySaved]);
 
   const handleNextStep = () => {
     if (step === 1) {
@@ -157,6 +188,12 @@ export default function ActionPanel({
       return;
     }
 
+    if (requiresWinner && winnerSeat !== null && winnerSeat === loserSeat) {
+      setFeedbackType('error');
+      setFeedbackMessage('胡牌玩家與放槍玩家不能是同一位。');
+      return;
+    }
+
     if (supportsWinMeta && !waitType) {
       setFeedbackType('error');
       setFeedbackMessage('請選擇聽型。');
@@ -176,6 +213,25 @@ export default function ActionPanel({
     try {
       const nextHandNo = room.current_hand_no + 1;
 
+      const stateResult = advanceGameState({
+        currentRoundWind,
+        currentDealerSeatIndex,
+        currentDealerStreak,
+        resultType,
+        winnerSeat,
+      });
+
+      const calculatedChanges = calculateScoreChanges({
+        resultType,
+        winnerSeat,
+        loserSeat,
+        taiCount: requiresTaiCount ? taiCount : 0,
+        baseScore: room.base_score ?? 0,
+        taiUnitAmount: room.tai_unit_amount,
+      });
+
+      const createdByName = getCurrentUserName() || room.owner_name;
+
       const { data: handData, error: handError } = await supabase
         .from('hands')
         .insert({
@@ -190,15 +246,6 @@ export default function ActionPanel({
         throw handError ?? new Error('建立 hand 失敗');
       }
 
-      const calculatedChanges = calculateScoreChanges({
-        resultType,
-        winnerSeat,
-        loserSeat,
-        taiCount: requiresTaiCount ? taiCount : 0,
-        baseScore: room.base_score ?? 0,
-        taiUnitAmount: room.tai_unit_amount,
-      });
-
       const { error: recordError } = await supabase
         .from('records')
         .insert({
@@ -212,9 +259,16 @@ export default function ActionPanel({
           winning_tile: supportsWinMeta ? winningTile || null : null,
           note: showExtras ? note.trim() || null : null,
           misdeal_seat: showExtras && hasMisdeal ? misdealSeat : null,
-          misdeal_note:
-            showExtras && hasMisdeal ? misdealNote.trim() || null : null,
-          created_by_name: room.owner_name,
+          misdeal_note: showExtras && hasMisdeal ? misdealNote.trim() || null : null,
+          created_by_name: createdByName,
+
+          round_wind_before: currentRoundWind,
+          dealer_seat_index_before: currentDealerSeatIndex,
+          dealer_streak_before: currentDealerStreak,
+
+          round_wind_after: stateResult.nextRoundWind,
+          dealer_seat_index_after: stateResult.nextDealerSeatIndex,
+          dealer_streak_after: stateResult.nextDealerStreak,
         });
 
       if (recordError) {
@@ -238,7 +292,13 @@ export default function ActionPanel({
 
       const { error: roomUpdateError } = await supabase
         .from('rooms')
-        .update({ current_hand_no: nextHandNo })
+        .update({
+          current_hand_no: nextHandNo,
+          round_wind: stateResult.nextRoundWind,
+          dealer_seat_index: stateResult.nextDealerSeatIndex,
+          dealer_streak: stateResult.nextDealerStreak,
+          status: stateResult.isGameFinished ? 'finished' : room.status,
+        })
         .eq('id', room.id);
 
       if (roomUpdateError) {
@@ -248,7 +308,22 @@ export default function ActionPanel({
       resetForm();
       setRecentlySaved(true);
       setFeedbackType('success');
-      setFeedbackMessage('紀錄成功');
+
+      if (stateResult.isGameFinished) {
+        setFeedbackMessage('紀錄成功，本局已結束');
+      } else if (stateResult.isDealerContinued) {
+        setFeedbackMessage(
+          `紀錄成功｜${currentDealerPlayer?.player_name ?? getSeatWind(currentDealerSeatIndex)} 連莊 ${stateResult.nextDealerStreak}`
+        );
+      } else {
+        setFeedbackMessage(
+          `紀錄成功｜下一局 ${getRoundLabel(
+            stateResult.nextRoundWind,
+            stateResult.nextDealerSeatIndex
+          )}`
+        );
+      }
+
       triggerHaptic(60);
       await onRecorded();
     } catch (err) {
@@ -270,15 +345,39 @@ export default function ActionPanel({
           : 'border-white/10 bg-white/5 shadow-2xl'
       }`}
     >
-      <div className="mb-3 flex items-center gap-2">
-        {[1, 2, 3].map((s) => (
-          <div
-            key={s}
-            className={`h-0.5 flex-1 rounded-full transition-all ${
-              step >= s ? 'bg-[#B6FF00]' : 'bg-white/10'
-            }`}
-          />
-        ))}
+      <div className="mb-3 space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold tracking-[0.25em] text-neutral-500 uppercase">
+                目前局面
+              </p>
+              <p className="mt-1 text-lg font-black text-[#B6FF00]">
+                {currentRoundLabel}
+              </p>
+            </div>
+
+            <div className="text-right">
+              <p className="text-sm font-bold text-white">
+                莊家：{currentDealerPlayer?.player_name ?? getSeatWind(currentDealerSeatIndex)}
+              </p>
+              <p className="mt-1 text-xs text-neutral-400">
+                {currentDealerStreak > 0 ? `莊家連 ${currentDealerStreak}` : '目前無連莊'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-1 flex items-center gap-2">
+          {[1, 2, 3].map((s) => (
+            <div
+              key={s}
+              className={`h-0.5 flex-1 rounded-full transition-all ${
+                step >= s ? 'bg-[#B6FF00]' : 'bg-white/10'
+              }`}
+            />
+          ))}
+        </div>
       </div>
 
       {feedbackMessage && feedbackType ? (
@@ -325,20 +424,33 @@ export default function ActionPanel({
               <div className="space-y-3">
                 <p className="text-sm text-neutral-400">是誰胡了？</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {sortedPlayers.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setWinnerSeat(p.seat_index)}
-                      className={`h-16 rounded-xl border font-bold transition ${
-                        winnerSeat === p.seat_index
-                          ? 'border-transparent bg-[#B6FF00] text-black'
-                          : 'border-white/10 bg-white/5'
-                      }`}
-                    >
-                      {p.player_name}
-                    </button>
-                  ))}
+                  {sortedPlayers.map((p) => {
+                    const seatWind = getSeatWind(p.seat_index);
+                    const isDealer = p.seat_index === currentDealerSeatIndex;
+
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setWinnerSeat(p.seat_index)}
+                        className={`rounded-xl border px-3 py-3 text-left font-bold transition ${
+                          winnerSeat === p.seat_index
+                            ? 'border-transparent bg-[#B6FF00] text-black'
+                            : 'border-white/10 bg-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{p.player_name}</span>
+                          <span className="text-xs opacity-70">{seatWind}</span>
+                        </div>
+                        {isDealer ? (
+                          <div className="mt-1 text-[11px] font-bold opacity-80">
+                            當前莊家
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
