@@ -16,12 +16,27 @@ function generateRoomCode(length = 6) {
   return result;
 }
 
-type SeatAssignment = {
-  seatIndex: number;
+const GRAB_POSITIONS = [0, 1, 2, 3] as const;
+const QUICK_BASE_SCORES = [10, 20, 30, 50];
+const QUICK_TAI_UNIT_AMOUNTS = [5, 10, 20, 50];
+
+type GrabAssignment = {
+  orderIndex: number;
   playerName: string;
 };
 
-const SEATS = [0, 1, 2, 3] as const;
+function rotatePlayersFromStarter(grabOrder: string[], starterName: string): string[] {
+  const starterIndex = grabOrder.findIndex((name) => name === starterName);
+
+  if (starterIndex === -1) {
+    return grabOrder;
+  }
+
+  return [
+    ...grabOrder.slice(starterIndex),
+    ...grabOrder.slice(0, starterIndex),
+  ];
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -35,12 +50,12 @@ export default function HomePage() {
   const [baseScore, setBaseScore] = useState(30);
   const [taiUnitAmount, setTaiUnitAmount] = useState(10);
 
-  const [dealerSeatIndex, setDealerSeatIndex] = useState(0);
+  const [grabEast, setGrabEast] = useState('');
+  const [grabSouth, setGrabSouth] = useState('');
+  const [grabWest, setGrabWest] = useState('');
+  const [grabNorth, setGrabNorth] = useState('');
 
-  const [seatEast, setSeatEast] = useState('');
-  const [seatSouth, setSeatSouth] = useState('');
-  const [seatWest, setSeatWest] = useState('');
-  const [seatNorth, setSeatNorth] = useState('');
+  const [startingDealerName, setStartingDealerName] = useState('');
 
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [joinUserName, setJoinUserName] = useState('');
@@ -53,15 +68,37 @@ export default function HomePage() {
     [player1, player2, player3, player4]
   );
 
-  const seatAssignments = useMemo<SeatAssignment[]>(
-    () => [
-      { seatIndex: 0, playerName: seatEast.trim() },
-      { seatIndex: 1, playerName: seatSouth.trim() },
-      { seatIndex: 2, playerName: seatWest.trim() },
-      { seatIndex: 3, playerName: seatNorth.trim() },
-    ],
-    [seatEast, seatSouth, seatWest, seatNorth]
+  const validPlayerNames = useMemo(
+    () => playerNames.filter(Boolean),
+    [playerNames]
   );
+
+  const grabAssignments = useMemo<GrabAssignment[]>(
+    () => [
+      { orderIndex: 0, playerName: grabEast.trim() },
+      { orderIndex: 1, playerName: grabSouth.trim() },
+      { orderIndex: 2, playerName: grabWest.trim() },
+      { orderIndex: 3, playerName: grabNorth.trim() },
+    ],
+    [grabEast, grabSouth, grabWest, grabNorth]
+  );
+
+  const grabOrder = useMemo(
+    () => grabAssignments.map((item) => item.playerName),
+    [grabAssignments]
+  );
+
+  const finalSeatPlayers = useMemo(() => {
+    if (
+      grabOrder.some((name) => !name) ||
+      new Set(grabOrder).size !== 4 ||
+      !startingDealerName
+    ) {
+      return [];
+    }
+
+    return rotatePlayersFromStarter(grabOrder, startingDealerName);
+  }, [grabOrder, startingDealerName]);
 
   const allNamedPlayersReady =
     playerNames.filter(Boolean).length === 4 && new Set(playerNames).size === 4;
@@ -70,16 +107,21 @@ export default function HomePage() {
     localStorage.setItem(LOCAL_STORAGE_USER_NAME_KEY, name.trim());
   };
 
-  const handleAutoSeat = () => {
+  const handleAutoGrabOrder = () => {
     if (!allNamedPlayersReady) {
       setMessage('請先完整輸入 4 位且不重複的玩家名稱。');
       return;
     }
 
-    setSeatEast(playerNames[0]);
-    setSeatSouth(playerNames[1]);
-    setSeatWest(playerNames[2]);
-    setSeatNorth(playerNames[3]);
+    setGrabEast(playerNames[0]);
+    setGrabSouth(playerNames[1]);
+    setGrabWest(playerNames[2]);
+    setGrabNorth(playerNames[3]);
+
+    if (!startingDealerName) {
+      setStartingDealerName(playerNames[0]);
+    }
+
     setMessage('');
   };
 
@@ -119,21 +161,38 @@ export default function HomePage() {
       return;
     }
 
-    if (seatAssignments.some((item) => !item.playerName)) {
-      setMessage('請完成東、南、西、北四個座位安排。');
+    if (grabAssignments.some((item) => !item.playerName)) {
+      setMessage('請完成抓位東、抓位南、抓位西、抓位北。');
       return;
     }
 
-    const assignedNames = seatAssignments.map((item) => item.playerName);
+    const assignedGrabNames = grabAssignments.map((item) => item.playerName);
 
-    if (new Set(assignedNames).size !== 4) {
-      setMessage('座位安排不能重複，東南西北必須各是一位不同玩家。');
+    if (new Set(assignedGrabNames).size !== 4) {
+      setMessage('抓位順序不能重複，四個抓位必須各是一位不同玩家。');
       return;
     }
 
-    const allAssignedFromPlayers = assignedNames.every((name) => playerNames.includes(name));
+    const allAssignedFromPlayers = assignedGrabNames.every((name) =>
+      playerNames.includes(name)
+    );
     if (!allAssignedFromPlayers) {
-      setMessage('座位安排中的玩家必須來自上方輸入的 4 位玩家。');
+      setMessage('抓位順序中的玩家必須來自上方輸入的 4 位玩家。');
+      return;
+    }
+
+    if (!startingDealerName) {
+      setMessage('請選擇誰起莊。');
+      return;
+    }
+
+    if (!assignedGrabNames.includes(startingDealerName)) {
+      setMessage('起莊玩家必須來自抓位順序中的 4 位玩家。');
+      return;
+    }
+
+    if (finalSeatPlayers.length !== 4) {
+      setMessage('正式座位計算失敗，請檢查抓位順序與起莊設定。');
       return;
     }
 
@@ -152,7 +211,7 @@ export default function HomePage() {
             base_score: baseScore,
             tai_unit_amount: taiUnitAmount,
             round_wind: 0,
-            dealer_seat_index: dealerSeatIndex,
+            dealer_seat_index: 0,
             dealer_streak: 0,
             status: 'active',
           })
@@ -176,11 +235,11 @@ export default function HomePage() {
         throw new Error('建立房間失敗。');
       }
 
-      const playersPayload = seatAssignments.map((item) => ({
+      const playersPayload = finalSeatPlayers.map((name, seatIndex) => ({
         room_id: roomId,
-        seat_index: item.seatIndex,
-        player_name: item.playerName,
-        is_owner: item.playerName === trimmedOwnerName,
+        seat_index: seatIndex,
+        player_name: name,
+        is_owner: name === trimmedOwnerName,
       }));
 
       const { error: playersError } = await supabase
@@ -264,7 +323,7 @@ export default function HomePage() {
         <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-6">
           <h2 className="text-2xl font-black">建立房間</h2>
           <p className="mt-2 text-sm text-white/60">
-            先設定 4 位玩家、座位與起莊，快速開始一場牌局。
+            先設定 4 位玩家、抓位順序與誰起莊，系統會自動換算正式座位並以東風東開局。
           </p>
 
           <form onSubmit={handleCreateRoom} className="mt-6 space-y-5">
@@ -302,42 +361,87 @@ export default function HomePage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm text-white/70">一底多少</label>
-                <input
-                  type="number"
-                  min={0}
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                  value={baseScore}
-                  onChange={(e) => setBaseScore(Number(e.target.value))}
-                />
-              </div>
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <h3 className="text-lg font-black">底錢 / 台錢</h3>
+              <p className="mt-1 text-sm text-white/60">
+                先點常用值即可，也可以手動調整。
+              </p>
 
-              <div>
-                <label className="mb-2 block text-sm text-white/70">一台多少</label>
-                <input
-                  type="number"
-                  min={1}
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
-                  value={taiUnitAmount}
-                  onChange={(e) => setTaiUnitAmount(Number(e.target.value))}
-                />
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">一底多少</label>
+
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {QUICK_BASE_SCORES.map((value) => (
+                      <button
+                        key={`base-${value}`}
+                        type="button"
+                        onClick={() => setBaseScore(value)}
+                        className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
+                          baseScore === value
+                            ? 'bg-[#B6FF00] text-black'
+                            : 'border border-white/10 bg-white/5 text-white'
+                        }`}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                    value={baseScore}
+                    onChange={(e) => setBaseScore(Number(e.target.value))}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-white/70">一台多少</label>
+
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {QUICK_TAI_UNIT_AMOUNTS.map((value) => (
+                      <button
+                        key={`tai-${value}`}
+                        type="button"
+                        onClick={() => setTaiUnitAmount(value)}
+                        className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
+                          taiUnitAmount === value
+                            ? 'bg-[#B6FF00] text-black'
+                            : 'border border-white/10 bg-white/5 text-white'
+                        }`}
+                      >
+                        {value}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="number"
+                    min={1}
+                    inputMode="numeric"
+                    className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
+                    value={taiUnitAmount}
+                    onChange={(e) => setTaiUnitAmount(Number(e.target.value))}
+                  />
+                </div>
               </div>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-black">安排座位</h3>
+                  <h3 className="text-lg font-black">抓位順序</h3>
                   <p className="mt-1 text-sm text-white/60">
-                    請決定東、南、西、北各自是哪位玩家。
+                    先記錄抓位東、抓位南、抓位西、抓位北，這是起莊前的相對順序。
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={handleAutoSeat}
+                  onClick={handleAutoGrabOrder}
                   className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white transition active:scale-[0.99]"
                 >
                   自動帶入
@@ -346,117 +450,131 @@ export default function HomePage() {
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-sm font-bold text-[#B6FF00]">東</label>
+                  <label className="mb-2 block text-sm font-bold text-[#B6FF00]">
+                    抓位東
+                  </label>
                   <select
-                    value={seatEast}
-                    onChange={(e) => setSeatEast(e.target.value)}
+                    value={grabEast}
+                    onChange={(e) => setGrabEast(e.target.value)}
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
                   >
                     <option value="">請選擇玩家</option>
-                    {playerNames
-                      .filter(Boolean)
-                      .map((name) => (
-                        <option key={`east-${name}`} value={name}>
-                          {name}
-                        </option>
-                      ))}
+                    {validPlayerNames.map((name) => (
+                      <option key={`grab-east-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-bold text-[#67E8F9]">南</label>
+                  <label className="mb-2 block text-sm font-bold text-[#67E8F9]">
+                    抓位南
+                  </label>
                   <select
-                    value={seatSouth}
-                    onChange={(e) => setSeatSouth(e.target.value)}
+                    value={grabSouth}
+                    onChange={(e) => setGrabSouth(e.target.value)}
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
                   >
                     <option value="">請選擇玩家</option>
-                    {playerNames
-                      .filter(Boolean)
-                      .map((name) => (
-                        <option key={`south-${name}`} value={name}>
-                          {name}
-                        </option>
-                      ))}
+                    {validPlayerNames.map((name) => (
+                      <option key={`grab-south-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-bold text-[#FDBA74]">西</label>
+                  <label className="mb-2 block text-sm font-bold text-[#FDBA74]">
+                    抓位西
+                  </label>
                   <select
-                    value={seatWest}
-                    onChange={(e) => setSeatWest(e.target.value)}
+                    value={grabWest}
+                    onChange={(e) => setGrabWest(e.target.value)}
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
                   >
                     <option value="">請選擇玩家</option>
-                    {playerNames
-                      .filter(Boolean)
-                      .map((name) => (
-                        <option key={`west-${name}`} value={name}>
-                          {name}
-                        </option>
-                      ))}
+                    {validPlayerNames.map((name) => (
+                      <option key={`grab-west-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-bold text-[#FB7185]">北</label>
+                  <label className="mb-2 block text-sm font-bold text-[#FB7185]">
+                    抓位北
+                  </label>
                   <select
-                    value={seatNorth}
-                    onChange={(e) => setSeatNorth(e.target.value)}
+                    value={grabNorth}
+                    onChange={(e) => setGrabNorth(e.target.value)}
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none"
                   >
                     <option value="">請選擇玩家</option>
-                    {playerNames
-                      .filter(Boolean)
-                      .map((name) => (
-                        <option key={`north-${name}`} value={name}>
-                          {name}
-                        </option>
-                      ))}
+                    {validPlayerNames.map((name) => (
+                      <option key={`grab-north-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
             </div>
 
             <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <h3 className="text-lg font-black">確認起莊</h3>
+              <h3 className="text-lg font-black">誰起莊</h3>
               <p className="mt-1 text-sm text-white/60">
-                開局會從東風圈開始，請設定第一位莊家座位。
+                起莊者會自動旋轉成正式東位，所以開局固定為東風東。
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                {SEATS.map((seatIndex) => {
-                  const seatWind = getSeatWind(seatIndex);
-                  const seatPlayer = seatAssignments.find(
-                    (item) => item.seatIndex === seatIndex
-                  )?.playerName;
-
-                  return (
-                    <button
-                      key={seatIndex}
-                      type="button"
-                      onClick={() => setDealerSeatIndex(seatIndex)}
-                      className={`rounded-2xl border px-4 py-4 text-left transition ${
-                        dealerSeatIndex === seatIndex
-                          ? 'border-transparent bg-[#B6FF00] text-black'
-                          : 'border-white/10 bg-black/40 text-white'
-                      }`}
-                    >
-                      <div className="text-sm font-black">{seatWind}</div>
-                      <div className="mt-1 text-xs opacity-80">
-                        {seatPlayer || '尚未安排'}
-                      </div>
-                    </button>
-                  );
-                })}
+                {validPlayerNames.map((name) => (
+                  <button
+                    key={`starter-${name}`}
+                    type="button"
+                    onClick={() => setStartingDealerName(name)}
+                    className={`rounded-2xl border px-4 py-4 text-left transition ${
+                      startingDealerName === name
+                        ? 'border-transparent bg-[#B6FF00] text-black'
+                        : 'border-white/10 bg-black/40 text-white'
+                    }`}
+                  >
+                    <div className="text-sm font-black">{name}</div>
+                    <div className="mt-1 text-xs opacity-80">起莊</div>
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-lime-400/20 bg-lime-400/10 px-4 py-3 text-sm text-lime-300">
-              目前規則：1 底 {baseScore}，1 台 {taiUnitAmount}｜起始局面：
-              {' '}
-              東風{getSeatWind(dealerSeatIndex)}
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <h3 className="text-lg font-black">正式開局座位預覽</h3>
+              <p className="mt-1 text-sm text-white/60">
+                系統會依抓位順序與起莊結果，自動換算正式東南西北。
+              </p>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {[0, 1, 2, 3].map((seatIndex) => {
+                  const playerName = finalSeatPlayers[seatIndex] ?? '尚未確定';
+                  const seatWind = getSeatWind(seatIndex);
+
+                  return (
+                    <div
+                      key={`final-seat-${seatIndex}`}
+                      className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3"
+                    >
+                      <div className="text-sm font-black text-[#B6FF00]">{seatWind}</div>
+                      <div className="mt-1 text-sm text-white">{playerName}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-lime-400/20 bg-lime-400/10 px-4 py-3 text-sm text-lime-300">
+                起始局面：東風東｜起始莊家：{finalSeatPlayers[0] ?? '尚未確定'}｜
+                目前規則：1 底 {baseScore}，1 台 {taiUnitAmount}
+              </div>
             </div>
 
             <button
