@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { calculateScoreChanges, type RecordType } from '@/lib/gameLogic';
 import type { Room, RoomPlayer, WaitType } from '@/types/game';
 import TilePicker from '@/components/TilePicker';
+import WheelSelector, { type WheelOption } from '@/components/WheelSelector';
 
 interface ActionPanelProps {
   room: Room;
@@ -18,9 +19,12 @@ const RESULT_OPTIONS: { label: string; value: RecordType }[] = [
   { label: '流局', value: 'draw' },
 ];
 
-const QUICK_TAI_OPTIONS = [1, 2, 3, 4, 5];
+const TAI_OPTIONS: WheelOption<number>[] = Array.from({ length: 10 }, (_, i) => ({
+  label: `${i + 1} 台`,
+  value: i + 1,
+}));
 
-const WAIT_TYPE_OPTIONS: { label: string; value: WaitType }[] = [
+const WAIT_TYPE_OPTIONS: WheelOption<WaitType>[] = [
   { label: '單吊', value: 'single_wait' },
   { label: '雙頭', value: 'double_sided' },
   { label: '對對', value: 'double_pair' },
@@ -38,15 +42,19 @@ export default function ActionPanel({
   const [resultType, setResultType] = useState<RecordType>('tsumo');
   const [winnerSeat, setWinnerSeat] = useState<number | null>(null);
   const [loserSeat, setLoserSeat] = useState<number | null>(null);
+
   const [taiCount, setTaiCount] = useState(1);
-  const [waitType, setWaitType] = useState<WaitType | null>(null);
+  const [waitType, setWaitType] = useState<WaitType>('single_wait');
   const [winningTile, setWinningTile] = useState<string>('');
+
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
 
   const [hasMisdeal, setHasMisdeal] = useState(false);
   const [misdealSeat, setMisdealSeat] = useState<number | null>(null);
   const [misdealNote, setMisdealNote] = useState('');
+
+  const [showExtras, setShowExtras] = useState(false);
 
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [feedbackType, setFeedbackType] = useState<'success' | 'error' | ''>('');
@@ -92,12 +100,13 @@ export default function ActionPanel({
     setWinnerSeat(null);
     setLoserSeat(null);
     setTaiCount(1);
-    setWaitType(null);
+    setWaitType('single_wait');
     setWinningTile('');
     setNote('');
     setHasMisdeal(false);
     setMisdealSeat(null);
     setMisdealNote('');
+    setShowExtras(false);
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -117,13 +126,13 @@ export default function ActionPanel({
       return;
     }
 
-    if (supportsWinMeta && waitType === null) {
+    if (supportsWinMeta && !waitType) {
       setFeedbackType('error');
       setFeedbackMessage('請選擇聽型。');
       return;
     }
 
-    if (hasMisdeal && misdealSeat === null) {
+    if (showExtras && hasMisdeal && misdealSeat === null) {
       setFeedbackType('error');
       setFeedbackMessage('請選擇相公玩家。');
       return;
@@ -170,9 +179,10 @@ export default function ActionPanel({
           tai_count: requiresTaiCount ? taiCount : 0,
           wait_type: supportsWinMeta ? waitType : null,
           winning_tile: supportsWinMeta ? winningTile.trim() || null : null,
-          note: note.trim() || null,
-          misdeal_seat: hasMisdeal ? misdealSeat : null,
-          misdeal_note: hasMisdeal ? misdealNote.trim() || null : null,
+          note: showExtras ? note.trim() || null : null,
+          misdeal_seat: showExtras && hasMisdeal ? misdealSeat : null,
+          misdeal_note:
+            showExtras && hasMisdeal ? misdealNote.trim() || null : null,
           created_by_name: room.owner_name,
         });
 
@@ -223,13 +233,13 @@ export default function ActionPanel({
   return (
     <section
       ref={panelRef}
-      className={`rounded-[32px] border p-6 transition-all duration-500 ${
+      className={`rounded-[32px] border p-5 transition-all duration-500 ${
         recentlySaved
           ? 'border-[#B6FF00] bg-[#B6FF00]/10'
           : 'border-white/10 bg-white/5 shadow-2xl'
       }`}
     >
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-5 flex items-center gap-2">
         {[1, 2, 3].map((s) => (
           <div
             key={s}
@@ -252,7 +262,7 @@ export default function ActionPanel({
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {step === 1 && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             <h3 className="text-xl font-bold text-white">這把結果是？</h3>
@@ -345,185 +355,160 @@ export default function ActionPanel({
         )}
 
         {step === 3 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-            {requiresTaiCount && (
-              <div className="space-y-3">
-                <p className="text-sm text-neutral-400">幾台？</p>
+          <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+            {supportsWinMeta ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <WheelSelector
+                    label="台數"
+                    value={taiCount}
+                    options={TAI_OPTIONS}
+                    onChange={setTaiCount}
+                  />
 
-                <div className="flex gap-2">
-                  {QUICK_TAI_OPTIONS.map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setTaiCount(v)}
-                      className={`h-12 flex-1 rounded-lg font-bold ${
-                        taiCount === v ? 'bg-[#B6FF00] text-black' : 'bg-white/5'
-                      }`}
-                    >
-                      {v}
-                    </button>
-                  ))}
+                  <WheelSelector
+                    label="聽型"
+                    value={waitType}
+                    options={WAIT_TYPE_OPTIONS}
+                    onChange={setWaitType}
+                  />
                 </div>
 
-                <div className="flex items-center gap-4 rounded-2xl border border-white/5 bg-black/40 p-2">
-                  <button
-                    type="button"
-                    onClick={() => setTaiCount(Math.max(1, taiCount - 1))}
-                    className="h-12 w-12 text-2xl"
-                  >
-                    -
-                  </button>
-                  <span className="flex-1 text-center text-2xl font-mono font-bold text-[#B6FF00]">
-                    {taiCount} 台
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setTaiCount(taiCount + 1)}
-                    className="h-12 w-12 text-2xl"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {supportsWinMeta && (
-              <div className="space-y-4 rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div>
-                  <p className="text-sm font-semibold text-white">胡牌資訊</p>
-                  <p className="mt-1 text-xs text-neutral-400">
-                    記錄聽型與最後胡哪張牌。
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm text-neutral-300">聽型</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {WAIT_TYPE_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setWaitType(opt.value)}
-                        className={`h-14 rounded-xl border font-bold transition ${
-                          waitType === opt.value
-                            ? 'border-transparent bg-[#B6FF00] text-black'
-                            : 'border-white/10 bg-white/5 text-white'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500">
+                      胡哪張
+                    </p>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <label className="block text-sm text-neutral-300">
-                    胡哪張牌（可選）
-                  </label>
                   <input
                     value={winningTile}
                     onChange={(e) => setWinningTile(e.target.value)}
                     placeholder="例如：3萬、7筒、北"
+                    className="mb-3 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-neutral-500"
+                  />
+
+                  <TilePicker
+                    value={winningTile || null}
+                    onChange={(value) => setWinningTile(value ?? '')}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4 text-sm text-neutral-400">
+                流局不需填寫台數、聽型與胡牌張。
+              </div>
+            )}
+
+            {!showExtras ? (
+              <button
+                type="button"
+                onClick={() => setShowExtras(true)}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-white transition active:scale-[0.99]"
+              >
+                更多紀錄（相公 / 備註）
+              </button>
+            ) : (
+              <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">本手有人相公嗎？</p>
+                    <p className="mt-1 text-xs text-neutral-400">
+                      這是附加紀錄，不影響本手分數。
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHasMisdeal(false);
+                        setMisdealSeat(null);
+                        setMisdealNote('');
+                      }}
+                      className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                        !hasMisdeal
+                          ? 'bg-white text-black'
+                          : 'bg-white/10 text-white'
+                      }`}
+                    >
+                      沒有
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHasMisdeal(true)}
+                      className={`rounded-full px-4 py-2 text-sm font-bold transition ${
+                        hasMisdeal
+                          ? 'bg-amber-300 text-black'
+                          : 'bg-white/10 text-white'
+                      }`}
+                    >
+                      有
+                    </button>
+                  </div>
+                </div>
+
+                {hasMisdeal && (
+                  <>
+                    <div className="space-y-2">
+                      <p className="text-sm text-neutral-300">誰相公？</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {sortedPlayers.map((p) => (
+                          <button
+                            key={`misdeal-${p.id}`}
+                            type="button"
+                            onClick={() => setMisdealSeat(p.seat_index)}
+                            className={`h-14 rounded-xl border font-bold transition ${
+                              misdealSeat === p.seat_index
+                                ? 'border-transparent bg-amber-300 text-black'
+                                : 'border-white/10 bg-white/5 text-white'
+                            }`}
+                          >
+                            {p.player_name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-sm text-neutral-300">
+                        相公備註（可選）
+                      </label>
+                      <textarea
+                        value={misdealNote}
+                        onChange={(e) => setMisdealNote(e.target.value)}
+                        rows={2}
+                        placeholder="例如：少一張、多一張..."
+                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-neutral-500"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="space-y-2">
+                  <label className="block text-sm text-neutral-300">
+                    本手備註（可選）
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={3}
+                    placeholder="例如：特殊情況、補充說明..."
                     className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-neutral-500"
                   />
                 </div>
 
-                <TilePicker
-                  value={winningTile || null}
-                  onChange={(value) => setWinningTile(value ?? '')}
-                />
+                <button
+                  type="button"
+                  onClick={() => setShowExtras(false)}
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 py-3 text-sm font-bold text-neutral-300"
+                >
+                  收起補充資訊
+                </button>
               </div>
             )}
 
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-white">本手有人相公嗎？</p>
-                  <p className="mt-1 text-xs text-neutral-400">
-                    只做事件紀錄，不影響本手分數。
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setHasMisdeal(false);
-                      setMisdealSeat(null);
-                      setMisdealNote('');
-                    }}
-                    className={`rounded-full px-4 py-2 text-sm font-bold transition ${
-                      !hasMisdeal
-                        ? 'bg-white text-black'
-                        : 'bg-white/10 text-white'
-                    }`}
-                  >
-                    沒有
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setHasMisdeal(true)}
-                    className={`rounded-full px-4 py-2 text-sm font-bold transition ${
-                      hasMisdeal
-                        ? 'bg-amber-300 text-black'
-                        : 'bg-white/10 text-white'
-                    }`}
-                  >
-                    有
-                  </button>
-                </div>
-              </div>
-
-              {hasMisdeal && (
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-2">
-                    <p className="text-sm text-neutral-300">誰相公？</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {sortedPlayers.map((p) => (
-                        <button
-                          key={`misdeal-${p.id}`}
-                          type="button"
-                          onClick={() => setMisdealSeat(p.seat_index)}
-                          className={`h-14 rounded-xl border font-bold transition ${
-                            misdealSeat === p.seat_index
-                              ? 'border-transparent bg-amber-300 text-black'
-                              : 'border-white/10 bg-white/5 text-white'
-                          }`}
-                        >
-                          {p.player_name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-sm text-neutral-300">
-                      相公備註（可選）
-                    </label>
-                    <textarea
-                      value={misdealNote}
-                      onChange={(e) => setMisdealNote(e.target.value)}
-                      rows={2}
-                      placeholder="例如：少一張、多一張、手牌數不符..."
-                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-neutral-500"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm text-neutral-400">備註（可選）</label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                rows={3}
-                placeholder="例如：門清、自摸海底、特殊情況備註..."
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none placeholder:text-neutral-500"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-4">
+            <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setStep(1)}
