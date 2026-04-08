@@ -17,15 +17,15 @@ export interface Room {
   id: string;
   room_code: string;
   owner_name: string;
+  owner_id: string | null;
   base_score: number;
   status: RoomStatus;
   tai_unit_amount: number;
   current_hand_no: number;
 
-  // 新增：牌局狀態
-  round_wind?: number; // 0=東, 1=南, 2=西, 3=北
-  dealer_seat_index?: number; // 0=東, 1=南, 2=西, 3=北
-  dealer_streak?: number; // 初始為 0，續莊後 +1
+  round_wind?: number;
+  dealer_seat_index?: number;
+  dealer_streak?: number;
 
   created_at: string;
   updated_at: string;
@@ -34,7 +34,7 @@ export interface Room {
 export interface RoomPlayer {
   id: string;
   room_id: string;
-  seat_index: number; // 0=東, 1=南, 2=西, 3=北
+  seat_index: number;
   player_name: string;
   is_owner: boolean;
   created_at: string;
@@ -63,7 +63,6 @@ export interface RecordItem {
   misdeal_note: string | null;
   created_by_name: string;
 
-  // 新增：局面快照（before / after）
   round_wind_before?: number | null;
   dealer_seat_index_before?: number | null;
   dealer_streak_before?: number | null;
@@ -108,8 +107,8 @@ export interface GameState {
 }
 
 export interface AdvanceGameStateInput {
-  currentRoundWind: number; // 0~3
-  currentDealerSeatIndex: number; // 0~3
+  currentRoundWind: number;
+  currentDealerSeatIndex: number;
   currentDealerStreak: number;
   resultType: RecordType;
   winnerSeat: number | null;

@@ -326,10 +326,15 @@ export default function ActionPanel({
 
       triggerHaptic(60);
       await onRecorded();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Record submit failed:', err);
+      console.error('message:', err?.message);
+      console.error('details:', err?.details);
+      console.error('hint:', err?.hint);
+      console.error('code:', err?.code);
+
       setFeedbackType('error');
-      setFeedbackMessage('紀錄失敗');
+      setFeedbackMessage(`紀錄失敗：${err?.message || '未知錯誤'}`);
       triggerHaptic([50, 50]);
     } finally {
       setLoading(false);

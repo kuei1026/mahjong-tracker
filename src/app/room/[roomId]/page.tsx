@@ -58,6 +58,7 @@ export default function RoomPage() {
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [scoreChanges, setScoreChanges] = useState<ScoreChange[]>([]);
   const [currentUserName, setCurrentUserName] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
 
@@ -96,10 +97,26 @@ export default function RoomPage() {
           .order('created_at', { ascending: true }),
       ]);
 
-      if (roomRes.data) setRoom(roomRes.data);
-      if (playersRes.data) setPlayers(playersRes.data);
-      if (recordsRes.data) setRecords(recordsRes.data);
-      if (scoreChangesRes.data) setScoreChanges(scoreChangesRes.data);
+      if (roomRes.error) {
+        throw roomRes.error;
+      }
+
+      if (playersRes.error) {
+        throw playersRes.error;
+      }
+
+      if (recordsRes.error) {
+        throw recordsRes.error;
+      }
+
+      if (scoreChangesRes.error) {
+        throw scoreChangesRes.error;
+      }
+
+      setRoom(roomRes.data ?? null);
+      setPlayers(playersRes.data ?? []);
+      setRecords(recordsRes.data ?? []);
+      setScoreChanges(scoreChangesRes.data ?? []);
     } catch (e) {
       console.error('fetchRoomData failed:', e);
     } finally {
@@ -108,8 +125,18 @@ export default function RoomPage() {
   }, [roomId]);
 
   useEffect(() => {
-    setCurrentUserName(localStorage.getItem(LOCAL_STORAGE_USER_NAME_KEY) ?? '');
-    fetchRoomData();
+    const bootstrap = async () => {
+      setCurrentUserName(localStorage.getItem(LOCAL_STORAGE_USER_NAME_KEY) ?? '');
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      setCurrentUserId(user?.id ?? null);
+      await fetchRoomData();
+    };
+
+    bootstrap();
   }, [fetchRoomData]);
 
   useEffect(() => {
@@ -161,10 +188,9 @@ export default function RoomPage() {
       }));
   }, [players, scoreChanges]);
 
-  const isOwner = useMemo(
-    () => room?.owner_name === currentUserName,
-    [room, currentUserName]
-  );
+  const isOwner = useMemo(() => {
+    return !!room?.owner_id && !!currentUserId && room.owner_id === currentUserId;
+  }, [room, currentUserId]);
 
   const currentRoundWind = room?.round_wind ?? 0;
   const currentDealerSeatIndex = room?.dealer_seat_index ?? 0;
@@ -291,6 +317,11 @@ export default function RoomPage() {
   const handleSaveMatch = useCallback(async () => {
     if (!room || !isOwner || saveMatchLoading) return;
 
+    if (!currentUserId) {
+      setSaveMatchError('請先登入後再保存對局');
+      return;
+    }
+
     if (room.status !== 'finished') {
       setSaveMatchError('請先完成整場對局，結束後才能保存');
       return;
@@ -345,7 +376,7 @@ export default function RoomPage() {
       const { data: insertedMatch, error: matchError } = await supabase
         .from('matches')
         .insert({
-          owner_user_id: null,
+          owner_user_id: currentUserId,
           source_room_id: room.id,
           title: matchTitle,
           status: 'finished',
@@ -386,7 +417,6 @@ export default function RoomPage() {
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
-      // 改成 hand_id 為核心做 mapping，避免 record.id / hand_id 來回找造成錯配
       const handIdToSavedMatchRecordId = new Map<string, string>();
       const handIdToHandNo = new Map<string, number>();
 
@@ -466,7 +496,7 @@ export default function RoomPage() {
     } finally {
       setSaveMatchLoading(false);
     }
-  }, [room, isOwner, records, players, scoreChanges, saveMatchLoading]);
+  }, [room, isOwner, currentUserId, records, players, scoreChanges, saveMatchLoading]);
 
   if (loading || !room) {
     return (

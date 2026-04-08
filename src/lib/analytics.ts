@@ -10,16 +10,20 @@ interface PlayerStats {
   winCount: number;
 }
 
+interface PlayerStatsWithAverage extends PlayerStats {
+  avgTai: number;
+}
+
 export function calculateStats(
   records: RecordItem[],
   players: RoomPlayer[]
-) {
+): PlayerStatsWithAverage[] {
   const statsMap = new Map<number, PlayerStats>();
 
-  players.forEach((p) => {
-    statsMap.set(p.seat_index, {
-      playerName: p.player_name,
-      seatIndex: p.seat_index,
+  players.forEach((player) => {
+    statsMap.set(player.seat_index, {
+      playerName: player.player_name,
+      seatIndex: player.seat_index,
       tsumoCount: 0,
       ronWinCount: 0,
       dealInCount: 0,
@@ -28,31 +32,44 @@ export function calculateStats(
     });
   });
 
-  records.forEach((r) => {
-    if (r.result_type === 'tsumo' && r.winner_seat !== null) {
-      const s = statsMap.get(r.winner_seat)!;
-      s.tsumoCount++;
-      s.winCount++;
-      s.totalTai += r.tai_count;
+  records.forEach((record) => {
+    const winnerSeat = record.winner_seat;
+    const loserSeat = record.loser_seat;
+    const taiCount = typeof record.tai_count === 'number' ? record.tai_count : 0;
+
+    if (record.result_type === 'tsumo') {
+      if (winnerSeat === null || winnerSeat === undefined) return;
+
+      const winnerStats = statsMap.get(winnerSeat);
+      if (!winnerStats) return;
+
+      winnerStats.tsumoCount += 1;
+      winnerStats.winCount += 1;
+      winnerStats.totalTai += taiCount;
+      return;
     }
 
-    if (r.result_type === 'ron') {
-      if (r.winner_seat !== null) {
-        const s = statsMap.get(r.winner_seat)!;
-        s.ronWinCount++;
-        s.winCount++;
-        s.totalTai += r.tai_count;
+    if (record.result_type === 'ron') {
+      if (winnerSeat !== null && winnerSeat !== undefined) {
+        const winnerStats = statsMap.get(winnerSeat);
+        if (winnerStats) {
+          winnerStats.ronWinCount += 1;
+          winnerStats.winCount += 1;
+          winnerStats.totalTai += taiCount;
+        }
       }
 
-      if (r.loser_seat !== null) {
-        const s = statsMap.get(r.loser_seat)!;
-        s.dealInCount++;
+      if (loserSeat !== null && loserSeat !== undefined) {
+        const loserStats = statsMap.get(loserSeat);
+        if (loserStats) {
+          loserStats.dealInCount += 1;
+        }
       }
     }
   });
 
-  return Array.from(statsMap.values()).map((s) => ({
-    ...s,
-    avgTai: s.winCount > 0 ? s.totalTai / s.winCount : 0,
+  return Array.from(statsMap.values()).map((stats) => ({
+    ...stats,
+    avgTai: stats.winCount > 0 ? stats.totalTai / stats.winCount : 0,
   }));
 }
