@@ -1,11 +1,10 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
-
-const LOCAL_STORAGE_USER_NAME_KEY = 'mahjong_tracker_user_name';
+import { User } from '@supabase/supabase-js';
 
 function generateRoomCode(length = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -18,28 +17,23 @@ function generateRoomCode(length = 6) {
 
 function rotatePlayersFromStarter(grabOrder: string[], starterName: string): string[] {
   const starterIndex = grabOrder.findIndex((name) => name === starterName);
-
-  if (starterIndex === -1) {
-    return grabOrder;
-  }
-
-  return [
-    ...grabOrder.slice(starterIndex),
-    ...grabOrder.slice(0, starterIndex),
-  ];
+  if (starterIndex === -1) return grabOrder;
+  return [...grabOrder.slice(starterIndex), ...grabOrder.slice(0, starterIndex)];
 }
 
-const QUICK_BASE_SCORES = [30, 50, 100, 300];
-const QUICK_TAI_UNIT_AMOUNTS = [10, 20, 50, 100];
+const QUICK_BASE_OPTIONS = [10, 20, 30, 50, 100];
+const QUICK_TAI_OPTIONS = [5, 10, 20, 50, 100];
 
-type Mode = 'menu' | 'create' | 'join';
-type CreateStep = 1 | 2 | 3;
+type SeatKey = 'east' | 'south' | 'west' | 'north';
 
 export default function HomePage() {
   const router = useRouter();
 
-  const [mode, setMode] = useState<Mode>('menu');
-  const [createStep, setCreateStep] = useState<CreateStep>(1);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [mode, setMode] = useState<'menu' | 'create' | 'join'>('menu');
+  const [createStep, setCreateStep] = useState<1 | 2 | 3>(1);
 
   const [ownerName, setOwnerName] = useState('');
   const [player1, setPlayer1] = useState('');
@@ -50,11 +44,13 @@ export default function HomePage() {
   const [baseScore, setBaseScore] = useState(30);
   const [taiUnitAmount, setTaiUnitAmount] = useState(10);
 
+  const [baseCustomInput, setBaseCustomInput] = useState('30');
+  const [taiCustomInput, setTaiCustomInput] = useState('10');
+
   const [grabEast, setGrabEast] = useState('');
   const [grabSouth, setGrabSouth] = useState('');
   const [grabWest, setGrabWest] = useState('');
   const [grabNorth, setGrabNorth] = useState('');
-
   const [startingDealerName, setStartingDealerName] = useState('');
 
   const [joinRoomCode, setJoinRoomCode] = useState('');
@@ -63,6 +59,64 @@ export default function HomePage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    const initAuth = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        setUser(session.user);
+        const name =
+          session.user.user_metadata?.full_name ||
+          session.user.user_metadata?.name ||
+          '';
+        setOwnerName(name);
+        setPlayer1(name);
+      }
+
+      setAuthLoading(false);
+    };
+
+    initAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const nextUser = session?.user ?? null;
+      setUser(nextUser);
+
+      if (nextUser) {
+        const name =
+          nextUser.user_metadata?.full_name ||
+          nextUser.user_metadata?.name ||
+          '';
+        setOwnerName(name);
+        setPlayer1(name);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    setMessage('');
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      console.error('Google 登入失敗:', error);
+      setMessage(`登入失敗：${error.message}`);
+    }
+  };
 
   const playerNames = useMemo(
     () => [player1.trim(), player2.trim(), player3.trim(), player4.trim()],
@@ -77,30 +131,14 @@ export default function HomePage() {
   );
 
   const finalSeatPlayers = useMemo(() => {
-    if (
-      grabOrder.some((name) => !name) ||
-      new Set(grabOrder).size !== 4 ||
-      !startingDealerName
-    ) {
-      return [];
-    }
-
+    if (grabOrder.some((n) => !n)) return [];
+    if (new Set(grabOrder).size !== 4) return [];
+    if (!startingDealerName) return [];
     return rotatePlayersFromStarter(grabOrder, startingDealerName);
   }, [grabOrder, startingDealerName]);
 
-  const saveUserNameToLocalStorage = (name: string) => {
-    localStorage.setItem(LOCAL_STORAGE_USER_NAME_KEY, name.trim());
-  };
-
   const resetCreateFlow = () => {
     setCreateStep(1);
-    setOwnerName('');
-    setPlayer1('');
-    setPlayer2('');
-    setPlayer3('');
-    setPlayer4('');
-    setBaseScore(30);
-    setTaiUnitAmount(10);
     setGrabEast('');
     setGrabSouth('');
     setGrabWest('');
@@ -109,193 +147,131 @@ export default function HomePage() {
     setMessage('');
   };
 
-  const openCreateFlow = () => {
-    resetCreateFlow();
-    setMode('create');
-  };
-
-  const openJoinFlow = () => {
-    setMessage('');
-    setMode('join');
-  };
-
-  const backToMenu = () => {
-    setMessage('');
-    setMode('menu');
-  };
-
-  const validateCreateStep1 = () => {
-    const trimmedOwnerName = ownerName.trim();
-
-    if (!trimmedOwnerName) {
-      setMessage('請輸入房主名稱。');
-      return false;
-    }
-
-    if (playerNames.some((name) => !name)) {
-      setMessage('請完整輸入 4 位玩家名稱。');
+  const validateStep1 = () => {
+    if (!playerNames.every((n) => n)) {
+      setMessage('請填寫所有玩家名稱');
       return false;
     }
 
     if (new Set(playerNames).size !== 4) {
-      setMessage('4 位玩家名稱不能重複。');
+      setMessage('玩家名稱不可重複');
       return false;
     }
 
-    if (!playerNames.includes(trimmedOwnerName)) {
-      setMessage('房主名稱必須和其中一位玩家名稱一致。');
-      return false;
-    }
-
-    if (baseScore < 0) {
-      setMessage('底錢不能小於 0。');
-      return false;
-    }
-
-    if (taiUnitAmount <= 0) {
-      setMessage('台錢必須大於 0。');
+    if (baseScore <= 0 || taiUnitAmount <= 0) {
+      setMessage('底錢與台錢需大於 0');
       return false;
     }
 
     return true;
   };
 
-  const validateCreateStep2 = () => {
-    if (grabOrder.some((name) => !name)) {
-      setMessage('請完成抓位東、抓位南、抓位西、抓位北。');
+  const validateStep2 = () => {
+    const seats = [grabEast, grabSouth, grabWest, grabNorth];
+
+    if (seats.includes('')) {
+      setMessage('抓位不可留空');
       return false;
     }
 
-    if (new Set(grabOrder).size !== 4) {
-      setMessage('抓位順序不能重複，四個位置必須各是一位不同玩家。');
-      return false;
-    }
-
-    const allAssignedFromPlayers = grabOrder.every((name) => playerNames.includes(name));
-    if (!allAssignedFromPlayers) {
-      setMessage('抓位順序中的玩家必須來自前一步輸入的 4 位玩家。');
+    if (new Set(seats).size !== 4) {
+      setMessage('抓位不可重複');
       return false;
     }
 
     return true;
   };
 
-  const validateCreateStep3 = () => {
+  const validateStep3 = () => {
     if (!startingDealerName) {
-      setMessage('請選擇誰起莊。');
+      setMessage('請選擇起莊玩家');
       return false;
     }
 
-    if (!grabOrder.includes(startingDealerName)) {
-      setMessage('起莊玩家必須來自抓位順序中的 4 位玩家。');
-      return false;
-    }
-
-    if (finalSeatPlayers.length !== 4) {
-      setMessage('正式座位計算失敗，請重新確認設定。');
+    if (!finalSeatPlayers.length) {
+      setMessage('座位計算失敗，請重新確認抓位與起莊');
       return false;
     }
 
     return true;
   };
 
-  const handleNextCreateStep = () => {
-    setMessage('');
+  const handleCreateRoom = async (event?: FormEvent) => {
+    event?.preventDefault();
 
-    if (createStep === 1) {
-      if (!validateCreateStep1()) return;
-      setCreateStep(2);
+    if (!user) {
+      setMessage('請先登入 Google 帳號');
       return;
     }
 
-    if (createStep === 2) {
-      if (!validateCreateStep2()) return;
-      setCreateStep(3);
-    }
-  };
-
-  const handlePrevCreateStep = () => {
-    setMessage('');
-
-    if (createStep === 2) {
-      setCreateStep(1);
+    if (!validateStep1() || !validateStep2() || !validateStep3()) {
       return;
     }
-
-    if (createStep === 3) {
-      setCreateStep(2);
-    }
-  };
-
-  const handleCreateRoom = async (event: FormEvent) => {
-    event.preventDefault();
-    setMessage('');
-
-    if (!validateCreateStep1()) return;
-    if (!validateCreateStep2()) return;
-    if (!validateCreateStep3()) return;
-
-    const trimmedOwnerName = ownerName.trim();
 
     setCreateLoading(true);
+    setMessage('');
+
+    let createdRoomId: string | null = null;
 
     try {
-      let roomCode = generateRoomCode();
-      let roomId: string | null = null;
+      const roomCode = generateRoomCode();
+      const ownerDisplayName = player1.trim();
 
-      for (let attempt = 0; attempt < 5; attempt += 1) {
-        const { data: roomData, error: roomError } = await supabase
-          .from('rooms')
-          .insert({
-            room_code: roomCode,
-            owner_name: trimmedOwnerName,
-            base_score: baseScore,
-            tai_unit_amount: taiUnitAmount,
-            round_wind: 0,
-            dealer_seat_index: 0,
-            dealer_streak: 0,
-            status: 'active',
-          })
-          .select()
-          .single();
+      const { data: roomData, error: roomError } = await supabase
+        .from('rooms')
+        .insert({
+          room_code: roomCode,
+          owner_id: user.id,
+          owner_name: ownerDisplayName,
+          base_score: baseScore,
+          tai_unit_amount: taiUnitAmount,
+          status: 'active',
+          round_wind: 0,
+          dealer_seat_index: 0,
+          dealer_streak: 0,
+        })
+        .select()
+        .single();
 
-        if (!roomError && roomData) {
-          roomId = roomData.id;
-          break;
-        }
+      if (roomError) throw roomError;
 
-        if (roomError?.code === '23505') {
-          roomCode = generateRoomCode();
-          continue;
-        }
+      createdRoomId = roomData.id;
 
-        throw roomError;
+      const ownerSeatIndex = finalSeatPlayers.findIndex((name) => name === ownerDisplayName);
+
+      if (ownerSeatIndex === -1) {
+        throw new Error('找不到房主座位，請確認玩家名稱與抓位設定');
       }
 
-      if (!roomId) {
-        throw new Error('建立房間失敗。');
-      }
-
-      const playersPayload = finalSeatPlayers.map((name, seatIndex) => ({
-        room_id: roomId,
-        seat_index: seatIndex,
+      const playersPayload = finalSeatPlayers.map((name, idx) => ({
+        room_id: roomData.id,
+        seat_index: idx,
         player_name: name,
-        is_owner: name === trimmedOwnerName,
+        is_owner: idx === ownerSeatIndex,
+        user_id: idx === ownerSeatIndex ? user.id : null,
       }));
 
-      const { error: playersError } = await supabase
-        .from('room_players')
-        .insert(playersPayload);
+      const { error: playersError } = await supabase.from('room_players').insert(playersPayload);
 
-      if (playersError) {
-        throw playersError;
+      if (playersError) throw playersError;
+
+      localStorage.setItem('mahjong_tracker_user_name', ownerDisplayName);
+      router.push(`/room/${roomData.id}`);
+    } catch (error: any) {
+      console.error('建立房間失敗:', error);
+
+      if (createdRoomId) {
+        const { error: rollbackError } = await supabase
+          .from('rooms')
+          .delete()
+          .eq('id', createdRoomId);
+
+        if (rollbackError) {
+          console.error('回滾刪除房間失敗:', rollbackError);
+        }
       }
 
-      saveUserNameToLocalStorage(trimmedOwnerName);
-      router.push(`/room/${roomId}`);
-    } catch (error) {
-      console.error('Create room failed:', error);
-      setMessage('建立房間失敗，請稍後再試。');
+      setMessage(`建立失敗：${error?.message || '未知錯誤，請查看 console'}`);
     } finally {
       setCreateLoading(false);
     }
@@ -303,498 +279,580 @@ export default function HomePage() {
 
   const handleJoinRoom = async (event: FormEvent) => {
     event.preventDefault();
-    setMessage('');
 
     const roomCode = joinRoomCode.trim().toUpperCase();
-    const trimmedJoinUserName = joinUserName.trim();
+    const displayName = joinUserName.trim();
 
-    if (!roomCode) {
-      setMessage('請輸入房號。');
-      return;
-    }
-
-    if (!trimmedJoinUserName) {
-      setMessage('請輸入你的名稱。');
+    if (!roomCode || !displayName) {
+      setMessage('請填寫完整資訊');
       return;
     }
 
     setJoinLoading(true);
+    setMessage('');
 
     try {
-      const { data: roomData, error: roomError } = await supabase
+      const { data: roomData, error } = await supabase
         .from('rooms')
-        .select('id, room_code, status')
+        .select('id, status')
         .eq('room_code', roomCode)
         .single();
 
-      if (roomError || !roomData) {
-        setMessage('找不到此房間。');
-        return;
+      if (error || !roomData) {
+        throw new Error('找不到此房間');
       }
 
       if (roomData.status !== 'active') {
-        setMessage('此房間目前不是進行中狀態。');
-        return;
+        throw new Error('此房間目前不可加入');
       }
 
-      saveUserNameToLocalStorage(trimmedJoinUserName);
+      localStorage.setItem('mahjong_tracker_user_name', displayName);
       router.push(`/room/${roomData.id}`);
-    } catch (error) {
-      console.error('Join room failed:', error);
-      setMessage('加入房間失敗，請稍後再試。');
+    } catch (error: any) {
+      console.error('加入房間失敗:', error);
+      setMessage(error?.message || '加入房間失敗');
     } finally {
       setJoinLoading(false);
     }
   };
 
-  const renderCreateStep = () => {
-    if (createStep === 1) {
-      return (
-        <motion.div
-          key="create-step-1"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ duration: 0.18 }}
-          className="space-y-5"
-        >
-          <div>
-            <p className="text-xs font-black tracking-[0.35em] text-neutral-500 uppercase">
-              Step 1
-            </p>
-            <h3 className="mt-2 text-2xl font-black">玩家與金額</h3>
-            <p className="mt-2 text-sm text-white/60">
-              先填房主、四位玩家，以及底錢與台錢。
-            </p>
-          </div>
+  const selectedMap = {
+    east: grabEast,
+    south: grabSouth,
+    west: grabWest,
+    north: grabNorth,
+  };
 
-          <input
-            className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-            value={ownerName}
-            onChange={(e) => setOwnerName(e.target.value)}
-            placeholder="房主名稱，例如：阿傑"
-          />
+  const getSeatOptions = (seat: SeatKey) => {
+    const otherSelected = Object.entries(selectedMap)
+      .filter(([key]) => key !== seat)
+      .map(([, value]) => value)
+      .filter(Boolean);
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              value={player1}
-              onChange={(e) => setPlayer1(e.target.value)}
-              placeholder="玩家 1"
-            />
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              value={player2}
-              onChange={(e) => setPlayer2(e.target.value)}
-              placeholder="玩家 2"
-            />
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              value={player3}
-              onChange={(e) => setPlayer3(e.target.value)}
-              placeholder="玩家 3"
-            />
-            <input
-              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              value={player4}
-              onChange={(e) => setPlayer4(e.target.value)}
-              placeholder="玩家 4"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <label className="block text-sm font-bold text-white/70">底錢</label>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {QUICK_BASE_SCORES.map((value) => (
-                  <button
-                    key={`base-${value}`}
-                    type="button"
-                    onClick={() => setBaseScore(value)}
-                    className={`rounded-full px-4 py-2 text-sm font-black transition ${
-                      baseScore === value
-                        ? 'bg-[#B6FF00] text-black'
-                        : 'border border-white/10 bg-white/5 text-white'
-                    }`}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number"
-                min={0}
-                inputMode="numeric"
-                className="mt-4 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-                value={baseScore}
-                onChange={(e) => setBaseScore(Number(e.target.value))}
-              />
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <label className="block text-sm font-bold text-white/70">台錢</label>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {QUICK_TAI_UNIT_AMOUNTS.map((value) => (
-                  <button
-                    key={`tai-${value}`}
-                    type="button"
-                    onClick={() => setTaiUnitAmount(value)}
-                    className={`rounded-full px-4 py-2 text-sm font-black transition ${
-                      taiUnitAmount === value
-                        ? 'bg-[#B6FF00] text-black'
-                        : 'border border-white/10 bg-white/5 text-white'
-                    }`}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-              <input
-                type="number"
-                min={1}
-                inputMode="numeric"
-                className="mt-4 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-                value={taiUnitAmount}
-                onChange={(e) => setTaiUnitAmount(Number(e.target.value))}
-              />
-            </div>
-          </div>
-        </motion.div>
-      );
-    }
-
-    if (createStep === 2) {
-      return (
-        <motion.div
-          key="create-step-2"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ duration: 0.18 }}
-          className="space-y-5"
-        >
-          <div>
-            <p className="text-xs font-black tracking-[0.35em] text-neutral-500 uppercase">
-              Step 2
-            </p>
-            <h3 className="mt-2 text-2xl font-black">抓位順序</h3>
-            <p className="mt-2 text-sm text-white/60">
-              依序選擇抓位東、抓位南、抓位西、抓位北。
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <label className="mb-3 block text-sm font-black text-[#B6FF00]">抓位東</label>
-              <select
-                value={grabEast}
-                onChange={(e) => setGrabEast(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              >
-                <option value="">請選擇玩家</option>
-                {validPlayerNames.map((name) => (
-                  <option key={`grab-east-${name}`} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <label className="mb-3 block text-sm font-black text-[#67E8F9]">抓位南</label>
-              <select
-                value={grabSouth}
-                onChange={(e) => setGrabSouth(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              >
-                <option value="">請選擇玩家</option>
-                {validPlayerNames.map((name) => (
-                  <option key={`grab-south-${name}`} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <label className="mb-3 block text-sm font-black text-[#FDBA74]">抓位西</label>
-              <select
-                value={grabWest}
-                onChange={(e) => setGrabWest(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              >
-                <option value="">請選擇玩家</option>
-                {validPlayerNames.map((name) => (
-                  <option key={`grab-west-${name}`} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-              <label className="mb-3 block text-sm font-black text-[#FB7185]">抓位北</label>
-              <select
-                value={grabNorth}
-                onChange={(e) => setGrabNorth(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-              >
-                <option value="">請選擇玩家</option>
-                {validPlayerNames.map((name) => (
-                  <option key={`grab-north-${name}`} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </motion.div>
-      );
-    }
-
-    return (
-      <motion.div
-        key="create-step-3"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -12 }}
-        transition={{ duration: 0.18 }}
-        className="space-y-5"
-      >
-        <div>
-          <p className="text-xs font-black tracking-[0.35em] text-neutral-500 uppercase">
-            Step 3
-          </p>
-          <h3 className="mt-2 text-2xl font-black">誰起莊</h3>
-          <p className="mt-2 text-sm text-white/60">
-            起莊者會自動成為正式東位，開局固定為東風東。
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {validPlayerNames.map((name) => (
-            <button
-              key={`starter-${name}`}
-              type="button"
-              onClick={() => setStartingDealerName(name)}
-              className={`rounded-3xl border px-4 py-5 text-left transition ${
-                startingDealerName === name
-                  ? 'border-transparent bg-[#B6FF00] text-black'
-                  : 'border-white/10 bg-white/[0.03] text-white'
-              }`}
-            >
-              <div className="text-base font-black">{name}</div>
-              <div className="mt-1 text-xs opacity-80">起莊</div>
-            </button>
-          ))}
-        </div>
-      </motion.div>
+    return validPlayerNames.filter(
+      (name) => name === selectedMap[seat] || !otherSelected.includes(name)
     );
   };
 
-  return (
-    <main className="min-h-screen bg-black px-5 py-8 text-white sm:px-6 sm:py-10">
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">
-            麻將對局紀錄工具
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm text-white/65 sm:text-base">
-            用更流暢的方式建立房間、記錄每一手牌局，讓比分、局面與對局節奏都更清楚。
-          </p>
+  const ScorePresetPanel = ({
+    title,
+    subtitle,
+    value,
+    options,
+    customInput,
+    setCustomInput,
+    onQuickPick,
+    onApplyCustom,
+  }: {
+    title: string;
+    subtitle: string;
+    value: number;
+    options: number[];
+    customInput: string;
+    setCustomInput: (v: string) => void;
+    onQuickPick: (v: number) => void;
+    onApplyCustom: (v: number) => void;
+  }) => {
+    return (
+      <div className="p-6 bg-white/5 rounded-3xl border border-white/5 space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <label className="text-[10px] font-black text-neutral-600 uppercase tracking-widest block">
+              {title}
+            </label>
+            <p className="text-neutral-500 text-xs mt-1">{subtitle}</p>
+          </div>
+          <div className="text-4xl font-black text-[#B6FF00] leading-none">{value}</div>
         </div>
 
-        {message ? (
-          <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="flex flex-wrap gap-2">
+          {options.map((option) => {
+            const active = value === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  onQuickPick(option);
+                  setCustomInput(String(option));
+                }}
+                className={`px-4 py-2 rounded-full text-sm font-black border transition-all ${
+                  active
+                    ? 'bg-[#B6FF00] text-black border-[#B6FF00]'
+                    : 'bg-black/40 text-white border-white/10 hover:border-[#B6FF00]/40 hover:text-[#B6FF00]'
+                }`}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-3">
+          <input
+            type="number"
+            min={1}
+            inputMode="numeric"
+            className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 outline-none font-bold text-white"
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value)}
+            placeholder="自訂數值"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const parsed = Number(customInput);
+              if (!Number.isFinite(parsed) || parsed <= 0) {
+                setMessage(`${title} 請輸入大於 0 的數值`);
+                return;
+              }
+              setMessage('');
+              onApplyCustom(parsed);
+            }}
+            className="px-5 rounded-2xl bg-white text-black font-black text-sm hover:opacity-90 transition-opacity"
+          >
+            套用
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  if (authLoading) {
+    return (
+      <div className="h-screen bg-black flex items-center justify-center text-[#B6FF00] font-black italic">
+        ARENA LOADING...
+      </div>
+    );
+  }
+
+  return (
+    <main className="min-h-screen bg-[#050505] text-white p-6 sm:p-10 font-sans">
+      <div className="max-w-3xl mx-auto">
+        <header className="mb-12">
+          <h1 className="text-4xl sm:text-6xl font-black italic tracking-tighter">
+            MAHJONG <span className="text-[#B6FF00]">TRACKER.</span>
+          </h1>
+        </header>
+
+        {message && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-xs font-bold text-center whitespace-pre-wrap">
             {message}
           </div>
-        ) : null}
+        )}
 
         <AnimatePresence mode="wait">
-          {mode === 'menu' && (
+          {!user && mode !== 'join' ? (
             <motion.section
-              key="menu"
-              initial={{ opacity: 0, y: 14 }}
+              key="auth"
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -14 }}
-              transition={{ duration: 0.18 }}
-              className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+              className="bg-white/[0.02] border border-white/5 p-10 rounded-[40px] text-center shadow-2xl backdrop-blur-xl"
             >
+              <h2 className="text-2xl font-black mb-4">歡迎來到競技場</h2>
+              <p className="text-neutral-500 mb-10 text-sm">
+                房主登入後可自動儲存對局紀錄與成就
+              </p>
+
               <button
-                type="button"
-                onClick={openCreateFlow}
-                className="group rounded-[28px] border border-white/10 bg-white/[0.03] px-6 py-8 text-left transition hover:bg-white/[0.06]"
+                onClick={handleGoogleLogin}
+                className="w-full py-5 bg-white text-black rounded-full font-black text-xl hover:bg-[#B6FF00] active:scale-95 transition-all"
               >
-                <div className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
-                  Create
-                </div>
-                <div className="mt-3 text-2xl font-black">建立房間</div>
-                <p className="mt-2 text-sm text-white/60">
-                  逐步設定玩家、金額、抓位與起莊，快速開局。
-                </p>
+                GOOGLE 帳號登入
               </button>
 
               <button
-                type="button"
-                onClick={openJoinFlow}
-                className="group rounded-[28px] border border-white/10 bg-white/[0.03] px-6 py-8 text-left transition hover:bg-white/[0.06]"
+                onClick={() => {
+                  setMessage('');
+                  setMode('join');
+                }}
+                className="mt-10 text-neutral-600 text-xs font-black uppercase tracking-widest hover:text-white transition-colors underline underline-offset-8"
               >
-                <div className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
-                  Join
-                </div>
-                <div className="mt-3 text-2xl font-black">加入房間</div>
-                <p className="mt-2 text-sm text-white/60">
-                  輸入房號與你的名稱，直接加入正在進行中的牌局。
-                </p>
+                我有房號，直接加入 / 觀戰
               </button>
             </motion.section>
-          )}
-
-          {mode === 'create' && (
-            <motion.section
-              key="create"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -14 }}
-              transition={{ duration: 0.18 }}
-              className="rounded-[30px] border border-white/10 bg-white/[0.03] pb-28"
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-white/5 px-5 py-5 sm:px-6">
-                <div>
-                  <p className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
-                    Room Setup
-                  </p>
-                  <h2 className="mt-2 text-2xl font-black">建立房間</h2>
-                  <p className="mt-2 text-sm text-white/60">
-                    分三步完成設定，不需要長頁面來回滑動。
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={backToMenu}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
+          ) : (
+            <div className="space-y-6">
+              {mode === 'menu' && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="grid grid-cols-1 sm:grid-cols-2 gap-4"
                 >
-                  返回
-                </button>
-              </div>
+                  <button
+                    onClick={() => {
+                      setMessage('');
+                      setMode('create');
+                    }}
+                    className="bg-[#B6FF00]/5 border border-[#B6FF00]/20 p-8 rounded-[32px] text-left hover:bg-[#B6FF00]/10 transition-all"
+                  >
+                    <p className="text-[#B6FF00] font-black text-xs uppercase mb-2 tracking-widest">
+                      Create Room
+                    </p>
+                    <h3 className="text-2xl font-black">建立對局</h3>
+                  </button>
 
-              <div className="px-5 pb-5 pt-4 sm:px-6">
-                <div className="mb-6 flex items-center gap-2">
-                  {[1, 2, 3].map((step) => (
-                    <div
-                      key={step}
-                      className={`h-1 flex-1 rounded-full ${
-                        createStep >= step ? 'bg-[#B6FF00]' : 'bg-white/10'
-                      }`}
-                    />
-                  ))}
-                </div>
+                  <button
+                    onClick={() => {
+                      setMessage('');
+                      setMode('join');
+                    }}
+                    className="bg-white/5 border border-white/10 p-8 rounded-[32px] text-left hover:bg-white/10 transition-all"
+                  >
+                    <p className="text-neutral-500 font-black text-xs uppercase mb-2 tracking-widest">
+                      Join / Spectate
+                    </p>
+                    <h3 className="text-2xl font-black">加入 / 觀戰</h3>
+                  </button>
 
-                <form onSubmit={handleCreateRoom}>
-                  <AnimatePresence mode="wait">{renderCreateStep()}</AnimatePresence>
-                </form>
-              </div>
+                  <button
+                    onClick={() => supabase.auth.signOut()}
+                    className="sm:col-span-2 mt-8 text-neutral-700 text-[10px] font-black uppercase tracking-[0.3em] hover:text-red-500 text-center"
+                  >
+                    Sign Out
+                  </button>
+                </motion.div>
+              )}
 
-              <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-black/85 px-5 py-4 backdrop-blur-xl sm:px-6">
-                <div className="mx-auto flex max-w-3xl gap-3">
-                  {createStep > 1 ? (
-                    <button
-                      type="button"
-                      onClick={handlePrevCreateStep}
-                      className="flex-1 rounded-full border border-white/10 bg-white/5 py-4 text-base font-black text-white transition active:scale-[0.99]"
-                    >
-                      上一步
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={backToMenu}
-                      className="flex-1 rounded-full border border-white/10 bg-white/5 py-4 text-base font-black text-white transition active:scale-[0.99]"
-                    >
-                      返回
-                    </button>
-                  )}
+              {mode === 'create' && (
+                <motion.section
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-white/[0.03] border border-white/10 rounded-[40px] overflow-hidden pb-32"
+                >
+                  <div className="p-8 border-b border-white/5 flex justify-between items-end">
+                    <div>
+                      <h2 className="text-3xl font-black italic">Arena Setup.</h2>
+                      <p className="text-[#B6FF00] text-[10px] font-black uppercase mt-1">
+                        Host: {user?.user_metadata?.full_name || user?.user_metadata?.name || 'Host'}
+                      </p>
+                    </div>
 
-                  {createStep < 3 ? (
                     <button
-                      type="button"
-                      onClick={handleNextCreateStep}
-                      className="flex-[1.35] rounded-full bg-[#B6FF00] py-4 text-base font-black text-black transition active:scale-[0.99]"
-                    >
-                      下一步
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
                       onClick={() => {
-                        const fakeEvent = { preventDefault: () => undefined } as FormEvent;
-                        void handleCreateRoom(fakeEvent);
+                        setMode('menu');
+                        resetCreateFlow();
                       }}
-                      disabled={createLoading}
-                      className="flex-[1.35] rounded-full bg-[#B6FF00] py-4 text-base font-black text-black transition active:scale-[0.99] disabled:opacity-60"
+                      className="text-neutral-500 font-bold uppercase text-[10px] tracking-widest hover:text-white"
                     >
-                      {createLoading ? '建立中...' : '建立房間'}
+                      Back
                     </button>
-                  )}
-                </div>
-              </div>
-            </motion.section>
-          )}
+                  </div>
 
-          {mode === 'join' && (
-            <motion.section
-              key="join"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -14 }}
-              transition={{ duration: 0.18 }}
-              className="rounded-[30px] border border-white/10 bg-white/[0.03] p-6"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-black tracking-[0.35em] text-neutral-500 uppercase">
-                    Join Room
-                  </p>
-                  <h2 className="mt-2 text-2xl font-black">加入房間</h2>
-                  <p className="mt-2 text-sm text-white/60">
-                    輸入房號與你的名稱即可進入對局。
-                  </p>
-                </div>
+                  <div className="p-8">
+                    <div className="mb-8 flex gap-2">
+                      {[1, 2, 3].map((step) => (
+                        <div
+                          key={step}
+                          className={`h-1.5 flex-1 rounded-full ${
+                            createStep >= step ? 'bg-[#B6FF00]' : 'bg-white/10'
+                          }`}
+                        />
+                      ))}
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={backToMenu}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
+                    {createStep === 1 && (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {[player1, player2, player3, player4].map((player, i) => (
+                            <div key={i} className="space-y-2">
+                              <label className="text-[10px] font-black text-neutral-600 uppercase tracking-widest">
+                                Player {i + 1} {i === 0 && '(Host)'}
+                              </label>
+                              <input
+                                className="w-full bg-black/40 border border-white/5 p-4 rounded-2xl outline-none"
+                                value={player}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (i === 0) {
+                                    setPlayer1(val);
+                                    setOwnerName(val);
+                                  } else if (i === 1) {
+                                    setPlayer2(val);
+                                  } else if (i === 2) {
+                                    setPlayer3(val);
+                                  } else {
+                                    setPlayer4(val);
+                                  }
+                                }}
+                                placeholder={`玩家 ${i + 1}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <ScorePresetPanel
+                            title="底錢 Base"
+                            subtitle="常用數值一鍵選，或手動輸入"
+                            value={baseScore}
+                            options={QUICK_BASE_OPTIONS}
+                            customInput={baseCustomInput}
+                            setCustomInput={setBaseCustomInput}
+                            onQuickPick={setBaseScore}
+                            onApplyCustom={setBaseScore}
+                          />
+
+                          <ScorePresetPanel
+                            title="台錢 Tai"
+                            subtitle="快速設定常用台錢"
+                            value={taiUnitAmount}
+                            options={QUICK_TAI_OPTIONS}
+                            customInput={taiCustomInput}
+                            setCustomInput={setTaiCustomInput}
+                            onQuickPick={setTaiUnitAmount}
+                            onApplyCustom={setTaiUnitAmount}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {createStep === 2 && (
+                      <div className="space-y-6">
+                        <h3 className="text-xl font-black italic">Grab Order.</h3>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {[
+                            {
+                              key: 'east' as SeatKey,
+                              label: '抓位東',
+                              val: grabEast,
+                              set: setGrabEast,
+                              color: '#B6FF00',
+                            },
+                            {
+                              key: 'south' as SeatKey,
+                              label: '抓位南',
+                              val: grabSouth,
+                              set: setGrabSouth,
+                              color: '#67E8F9',
+                            },
+                            {
+                              key: 'west' as SeatKey,
+                              label: '抓位西',
+                              val: grabWest,
+                              set: setGrabWest,
+                              color: '#FDBA74',
+                            },
+                            {
+                              key: 'north' as SeatKey,
+                              label: '抓位北',
+                              val: grabNorth,
+                              set: setGrabNorth,
+                              color: '#FB7185',
+                            },
+                          ].map((item) => {
+                            const options = getSeatOptions(item.key);
+
+                            return (
+                              <div
+                                key={item.label}
+                                className="p-4 bg-white/5 rounded-2xl border border-white/5"
+                              >
+                                <label
+                                  className="text-[10px] font-black mb-2 block uppercase"
+                                  style={{ color: item.color }}
+                                >
+                                  {item.label}
+                                </label>
+
+                                <div className="relative">
+                                  <select
+                                    className="w-full appearance-none bg-black/50 rounded-2xl px-4 py-4 pr-12 outline-none border border-white/5 text-base font-bold text-white hover:border-white/15 focus:border-[#B6FF00]/40 transition-colors"
+                                    value={item.val}
+                                    onChange={(e) => item.set(e.target.value)}
+                                  >
+                                    <option value="">選擇玩家</option>
+                                    {options.map((name) => (
+                                      <option key={name} value={name}>
+                                        {name}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-white/70">
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      width="18"
+                                      height="18"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <path d="m6 9 6 6 6-6" />
+                                    </svg>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                            小優化說明
+                          </p>
+                          <p className="text-sm text-neutral-400 leading-relaxed">
+                            已選過的玩家會自動從其他抓位選單中隱藏，減少重複選取的機率。
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {createStep === 3 && (
+                      <div className="space-y-6">
+                        <h3 className="text-xl font-black italic">Starting Dealer.</h3>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {validPlayerNames.map((name) => (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => setStartingDealerName(name)}
+                              className={`p-6 rounded-3xl border font-black transition-all text-left ${
+                                startingDealerName === name
+                                  ? 'bg-[#B6FF00] text-black border-transparent shadow-[0_10px_30px_rgba(182,255,0,0.2)]'
+                                  : 'bg-white/5 border-white/5 text-neutral-400'
+                              }`}
+                            >
+                              <p className="text-[10px] uppercase opacity-50 mb-1">Dealer</p>
+                              <div className="text-xl">{name}</div>
+                            </button>
+                          ))}
+                        </div>
+
+                        {finalSeatPlayers.length > 0 && (
+                          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-3">
+                              最終座位順序（由莊家開始）
+                            </p>
+                            <div className="grid grid-cols-2 gap-3 text-sm font-bold">
+                              <div className="rounded-2xl bg-black/30 p-4">
+                                東 / 莊家起始：{finalSeatPlayers[0]}
+                              </div>
+                              <div className="rounded-2xl bg-black/30 p-4">
+                                南：{finalSeatPlayers[1]}
+                              </div>
+                              <div className="rounded-2xl bg-black/30 p-4">
+                                西：{finalSeatPlayers[2]}
+                              </div>
+                              <div className="rounded-2xl bg-black/30 p-4">
+                                北：{finalSeatPlayers[3]}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="fixed bottom-0 left-0 right-0 p-8 bg-black/90 backdrop-blur-xl border-t border-white/5">
+                    <div className="max-w-3xl mx-auto flex gap-4">
+                      <button
+                        className="flex-1 py-5 rounded-full border border-white/10 font-black uppercase text-xs tracking-widest"
+                        onClick={() => {
+                          if (createStep === 1) {
+                            setMode('menu');
+                            resetCreateFlow();
+                            return;
+                          }
+                          setMessage('');
+                          setCreateStep((prev) => (prev - 1) as 1 | 2 | 3);
+                        }}
+                      >
+                        Back
+                      </button>
+
+                      <button
+                        className="flex-[2] py-5 rounded-full bg-[#B6FF00] text-black font-black uppercase text-xs tracking-widest shadow-[0_10px_40px_rgba(182,255,0,0.2)] active:scale-95 transition-all disabled:opacity-60"
+                        disabled={createLoading}
+                        onClick={(e) => {
+                          if (createStep === 1) {
+                            setMessage('');
+                            if (!validateStep1()) return;
+                            setCreateStep(2);
+                            return;
+                          }
+
+                          if (createStep === 2) {
+                            setMessage('');
+                            if (!validateStep2()) return;
+                            setCreateStep(3);
+                            return;
+                          }
+
+                          handleCreateRoom(e as any);
+                        }}
+                      >
+                        {createStep === 3
+                          ? createLoading
+                            ? 'Creating...'
+                            : 'Launch Arena'
+                          : 'Next Step'}
+                      </button>
+                    </div>
+                  </div>
+                </motion.section>
+              )}
+
+              {mode === 'join' && (
+                <motion.section
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-white/[0.03] border border-white/10 rounded-[40px] p-10"
                 >
-                  返回
-                </button>
-              </div>
+                  <div className="flex justify-between items-center mb-10">
+                    <h2 className="text-3xl font-black italic">Join / Spectate.</h2>
+                    <button
+                      onClick={() => {
+                        if (user) setMode('menu');
+                        setMessage('');
+                      }}
+                      className="text-neutral-500 font-bold uppercase text-[10px] tracking-widest hover:text-white"
+                    >
+                      {user ? 'Cancel' : 'Close'}
+                    </button>
+                  </div>
 
-              <form onSubmit={handleJoinRoom} className="mt-6 space-y-4">
-                <input
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-                  value={joinRoomCode}
-                  onChange={(e) => setJoinRoomCode(e.target.value)}
-                  placeholder="輸入房號"
-                />
+                  <form onSubmit={handleJoinRoom} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-neutral-600 uppercase tracking-widest ml-1">
+                        Room Code
+                      </label>
+                      <input
+                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-6 text-3xl font-black tracking-[0.3em] uppercase text-[#B6FF00] outline-none"
+                        value={joinRoomCode}
+                        onChange={(e) => setJoinRoomCode(e.target.value)}
+                        placeholder="CODE"
+                      />
+                    </div>
 
-                <input
-                  className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-4 text-base outline-none"
-                  value={joinUserName}
-                  onChange={(e) => setJoinUserName(e.target.value)}
-                  placeholder="你的名稱"
-                />
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-neutral-600 uppercase tracking-widest ml-1">
+                        Your Name
+                      </label>
+                      <input
+                        className="w-full rounded-2xl border border-white/10 bg-black/40 px-6 py-5 outline-none font-bold"
+                        value={joinUserName}
+                        onChange={(e) => setJoinUserName(e.target.value)}
+                        placeholder="輸入你的暱稱"
+                      />
+                    </div>
 
-                <button
-                  type="submit"
-                  disabled={joinLoading}
-                  className="w-full rounded-full border border-white/10 bg-white/5 py-4 text-lg font-black text-white transition active:scale-[0.99] disabled:opacity-60"
-                >
-                  {joinLoading ? '加入中...' : '加入房間'}
-                </button>
-              </form>
-            </motion.section>
+                    <button
+                      type="submit"
+                      disabled={joinLoading}
+                      className="w-full py-6 rounded-full bg-white text-black font-black text-lg active:scale-95 transition-all disabled:opacity-60"
+                    >
+                      {joinLoading ? 'ENTERING...' : 'ENTER ARENA'}
+                    </button>
+                  </form>
+                </motion.section>
+              )}
+            </div>
           )}
         </AnimatePresence>
       </div>
