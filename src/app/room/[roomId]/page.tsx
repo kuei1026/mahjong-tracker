@@ -457,7 +457,7 @@ export default function RoomPage() {
           return {
             match_id: matchId,
             match_record_id: savedMatchRecordId,
-            hand_no,
+            hand_no: handNo,
             seat_index: change.seat_index,
             delta_score: change.delta_score,
             created_at: change.created_at,
