@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { getRoundLabel, getSeatWind } from '@/lib/gameLogic';
@@ -20,11 +20,17 @@ const AVATAR_BG_CLASSES = [
   'bg-pink-400 text-black',
 ];
 
+type ToastType = 'success' | 'error' | 'info';
+
+interface ToastState {
+  id: number;
+  type: ToastType;
+  message: string;
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (!error) return fallback;
-
   if (typeof error === 'string') return error;
-
   if (error instanceof Error) return error.message || fallback;
 
   if (typeof error === 'object') {
@@ -51,6 +57,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 export default function RoomPage() {
   const params = useParams();
+  const router = useRouter();
   const roomId = params.roomId as string;
 
   const [room, setRoom] = useState<Room | null>(null);
@@ -61,18 +68,23 @@ export default function RoomPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const [undoLoading, setUndoLoading] = useState(false);
-  const [undoMessage, setUndoMessage] = useState('');
-  const [undoError, setUndoError] = useState('');
-
   const [finishLoading, setFinishLoading] = useState(false);
-  const [finishMessage, setFinishMessage] = useState('');
-  const [finishError, setFinishError] = useState('');
-
   const [saveMatchLoading, setSaveMatchLoading] = useState(false);
-  const [saveMatchMessage, setSaveMatchMessage] = useState('');
-  const [saveMatchError, setSaveMatchError] = useState('');
+
+  const [toasts, setToasts] = useState<ToastState[]>([]);
+  const toastIdRef = useRef(0);
+
+  const pushToast = useCallback((type: ToastType, message: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, type, message }]);
+
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 2800);
+  }, []);
 
   const fetchRoomData = useCallback(async () => {
     if (!roomId) return;
@@ -97,21 +109,10 @@ export default function RoomPage() {
           .order('created_at', { ascending: true }),
       ]);
 
-      if (roomRes.error) {
-        throw roomRes.error;
-      }
-
-      if (playersRes.error) {
-        throw playersRes.error;
-      }
-
-      if (recordsRes.error) {
-        throw recordsRes.error;
-      }
-
-      if (scoreChangesRes.error) {
-        throw scoreChangesRes.error;
-      }
+      if (roomRes.error) throw roomRes.error;
+      if (playersRes.error) throw playersRes.error;
+      if (recordsRes.error) throw recordsRes.error;
+      if (scoreChangesRes.error) throw scoreChangesRes.error;
 
       setRoom(roomRes.data ?? null);
       setPlayers(playersRes.data ?? []);
@@ -119,10 +120,11 @@ export default function RoomPage() {
       setScoreChanges(scoreChangesRes.data ?? []);
     } catch (e) {
       console.error('fetchRoomData failed:', e);
+      pushToast('error', '載入房間資料失敗');
     } finally {
       setLoading(false);
     }
-  }, [roomId]);
+  }, [roomId, pushToast]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -195,7 +197,6 @@ export default function RoomPage() {
   const currentRoundWind = room?.round_wind ?? 0;
   const currentDealerSeatIndex = room?.dealer_seat_index ?? 0;
   const currentDealerStreak = room?.dealer_streak ?? 0;
-
   const roundLabel = getRoundLabel(currentRoundWind, currentDealerSeatIndex);
 
   const dealerPlayer = useMemo(() => {
@@ -217,12 +218,7 @@ export default function RoomPage() {
     if (!confirmed) return;
 
     setUndoLoading(true);
-    setUndoError('');
-    setUndoMessage('');
-    setFinishError('');
-    setFinishMessage('');
-    setSaveMatchError('');
-    setSaveMatchMessage('');
+    setIsMenuOpen(false);
 
     try {
       const restoredHandNo = Math.max(0, room.current_hand_no - 1);
@@ -261,27 +257,26 @@ export default function RoomPage() {
 
       if (roomRollbackError) throw roomRollbackError;
 
-      setUndoMessage('已撤銷最後一手');
       await fetchRoomData();
+      pushToast('success', '已撤銷最後一手');
     } catch (error) {
       console.error('Undo last hand failed:', error);
-      setUndoError(getErrorMessage(error, '撤銷失敗，請稍後再試'));
+      pushToast('error', getErrorMessage(error, '撤銷失敗，請稍後再試'));
     } finally {
       setUndoLoading(false);
     }
-  }, [room, lastRecord, undoLoading, fetchRoomData]);
+  }, [room, lastRecord, undoLoading, fetchRoomData, pushToast]);
 
   const handleFinishRoom = useCallback(async () => {
     if (!room || !isOwner || finishLoading) return;
 
     if (room.status === 'finished') {
-      setFinishError('');
-      setFinishMessage('此對局已經結束');
+      pushToast('info', '此對局已經結束');
       return;
     }
 
     if (records.length === 0) {
-      setFinishError('至少要有一筆紀錄後，才能結束對局');
+      pushToast('error', '至少要有一筆紀錄後，才能結束對局');
       return;
     }
 
@@ -289,12 +284,7 @@ export default function RoomPage() {
     if (!confirmed) return;
 
     setFinishLoading(true);
-    setFinishError('');
-    setFinishMessage('');
-    setUndoError('');
-    setUndoMessage('');
-    setSaveMatchError('');
-    setSaveMatchMessage('');
+    setIsMenuOpen(false);
 
     try {
       const { error } = await supabase
@@ -304,41 +294,36 @@ export default function RoomPage() {
 
       if (error) throw error;
 
-      setFinishMessage('本場對局已結束');
       await fetchRoomData();
+      pushToast('success', '本場對局已結束');
     } catch (error) {
       console.error('Finish room failed:', error);
-      setFinishError(getErrorMessage(error, '結束對局失敗，請稍後再試'));
+      pushToast('error', getErrorMessage(error, '結束對局失敗，請稍後再試'));
     } finally {
       setFinishLoading(false);
     }
-  }, [room, isOwner, finishLoading, records.length, fetchRoomData]);
+  }, [room, isOwner, finishLoading, records.length, fetchRoomData, pushToast]);
 
   const handleSaveMatch = useCallback(async () => {
     if (!room || !isOwner || saveMatchLoading) return;
 
     if (!currentUserId) {
-      setSaveMatchError('請先登入後再保存對局');
+      pushToast('error', '請先登入後再保存對局');
       return;
     }
 
     if (room.status !== 'finished') {
-      setSaveMatchError('請先完成整場對局，結束後才能保存');
+      pushToast('error', '請先完成整場對局，結束後才能保存');
       return;
     }
 
     if (records.length === 0 || players.length === 0) {
-      setSaveMatchError('目前沒有可保存的完整對局資料');
+      pushToast('error', '目前沒有可保存的完整對局資料');
       return;
     }
 
     setSaveMatchLoading(true);
-    setSaveMatchError('');
-    setSaveMatchMessage('');
-    setUndoError('');
-    setUndoMessage('');
-    setFinishError('');
-    setFinishMessage('');
+    setIsMenuOpen(false);
 
     try {
       const scoreMap = new Map<number, number>();
@@ -472,7 +457,7 @@ export default function RoomPage() {
           return {
             match_id: matchId,
             match_record_id: savedMatchRecordId,
-            hand_no: handNo,
+            hand_no,
             seat_index: change.seat_index,
             delta_score: change.delta_score,
             created_at: change.created_at,
@@ -484,19 +469,26 @@ export default function RoomPage() {
           .from('match_score_changes')
           .insert(scoreChangeRows);
 
-        if (matchScoreChangesError) {
-          throw matchScoreChangesError;
-        }
+        if (matchScoreChangesError) throw matchScoreChangesError;
       }
 
-      setSaveMatchMessage('本場對局已成功保存');
+      pushToast('success', '本場對局已成功保存');
     } catch (error) {
       console.error('Save match failed:', error);
-      setSaveMatchError(getErrorMessage(error, '保存本場對局失敗，請稍後再試'));
+      pushToast('error', getErrorMessage(error, '保存本場對局失敗，請稍後再試'));
     } finally {
       setSaveMatchLoading(false);
     }
-  }, [room, isOwner, currentUserId, records, players, scoreChanges, saveMatchLoading]);
+  }, [
+    room,
+    isOwner,
+    currentUserId,
+    records,
+    players,
+    scoreChanges,
+    saveMatchLoading,
+    pushToast,
+  ]);
 
   if (loading || !room) {
     return (
@@ -508,17 +500,28 @@ export default function RoomPage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#0A0A0A] text-white selection:bg-[#B6FF00] selection:text-black">
-      <nav className="sticky top-0 z-30 border-b border-white/5 bg-[#0A0A0A]/80 px-4 py-4 backdrop-blur-xl sm:px-6">
+      <nav className="sticky top-0 z-40 border-b border-white/5 bg-[#0A0A0A]/80 px-4 py-4 backdrop-blur-xl sm:px-6">
         <div className="mx-auto flex max-w-5xl items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="mb-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-neutral-200 transition hover:bg-white/10"
+              >
+                ← 首頁
+              </button>
+
               <span className="text-sm font-black italic tracking-tight text-[#B6FF00]">
                 房號 {room.room_code}
               </span>
+
               <div className="h-1 w-1 rounded-full bg-white/20" />
+
               <span className="text-xs font-medium text-neutral-400">
                 第 {room.current_hand_no} 手
               </span>
+
               {room.status === 'finished' ? (
                 <>
                   <div className="h-1 w-1 rounded-full bg-white/20" />
@@ -552,13 +555,94 @@ export default function RoomPage() {
             </div>
           </div>
 
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 shadow-inner">
-            <span className="text-xs font-black text-[#B6FF00]">
-              {currentUserName.charAt(0).toUpperCase() || '?'}
-            </span>
+          <div className="relative flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-lg font-black text-white transition hover:bg-white/10"
+            >
+              ⋯
+            </button>
+
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 shadow-inner">
+              <span className="text-xs font-black text-[#B6FF00]">
+                {currentUserName.charAt(0).toUpperCase() || '?'}
+              </span>
+            </div>
+
+            <AnimatePresence>
+              {isMenuOpen && isOwner ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                  className="absolute right-0 top-12 z-50 w-56 rounded-2xl border border-white/10 bg-[#111111] p-2 shadow-2xl"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      router.push('/');
+                    }}
+                    className="w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/5"
+                  >
+                    ← 回首頁
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleUndoLastHand}
+                    disabled={!lastRecord || undoLoading}
+                    className="w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-white transition hover:bg-white/5 disabled:opacity-40"
+                  >
+                    {undoLoading ? '撤銷中...' : '↶ 撤銷最後一手'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleFinishRoom}
+                    disabled={room.status === 'finished' || finishLoading}
+                    className="w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-amber-200 transition hover:bg-white/5 disabled:opacity-40"
+                  >
+                    {finishLoading ? '結束中...' : '結束對局'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveMatch}
+                    disabled={room.status !== 'finished' || saveMatchLoading}
+                    className="w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-cyan-300 transition hover:bg-white/5 disabled:opacity-40"
+                  >
+                    {saveMatchLoading ? '保存中...' : '保存本場對局'}
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
         </div>
       </nav>
+
+      <div className="pointer-events-none fixed left-1/2 top-20 z-50 w-full max-w-sm -translate-x-1/2 px-4">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.96 }}
+              className={`mb-2 rounded-2xl border px-4 py-3 text-sm font-bold shadow-xl ${
+                toast.type === 'success'
+                  ? 'border-lime-400/20 bg-lime-400/10 text-lime-300'
+                  : toast.type === 'error'
+                    ? 'border-red-400/20 bg-red-400/10 text-red-300'
+                    : 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300'
+              }`}
+            >
+              {toast.message}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
       <section className="relative flex h-[62vh] min-h-[520px] flex-col items-center justify-center overflow-hidden">
         <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center opacity-[0.02]">
@@ -636,91 +720,7 @@ export default function RoomPage() {
         </div>
       </section>
 
-      {isOwner ? (
-        <div className="fixed bottom-10 left-0 right-0 z-40 flex justify-center px-6 sm:px-8">
-          <div className="flex w-full max-w-md flex-col gap-3">
-            {undoMessage ? (
-              <div className="rounded-2xl border border-lime-400/20 bg-lime-400/10 px-4 py-3 text-sm font-medium text-lime-300">
-                {undoMessage}
-              </div>
-            ) : null}
-
-            {undoError ? (
-              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-300">
-                {undoError}
-              </div>
-            ) : null}
-
-            {finishMessage ? (
-              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-200">
-                {finishMessage}
-              </div>
-            ) : null}
-
-            {finishError ? (
-              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-300">
-                {finishError}
-              </div>
-            ) : null}
-
-            {saveMatchMessage ? (
-              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-300">
-                {saveMatchMessage}
-              </div>
-            ) : null}
-
-            {saveMatchError ? (
-              <div className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm font-medium text-red-300">
-                {saveMatchError}
-              </div>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={handleSaveMatch}
-              disabled={room.status !== 'finished' || saveMatchLoading}
-              className="w-full rounded-full border border-cyan-400/20 bg-cyan-400/10 py-4 text-sm font-black tracking-[0.15em] text-cyan-200 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {saveMatchLoading
-                ? '保存中...'
-                : room.status === 'finished'
-                  ? '保存本場對局'
-                  : '結束後可保存'}
-            </button>
-
-            <div className="grid grid-cols-4 gap-3">
-              <button
-                type="button"
-                onClick={handleUndoLastHand}
-                disabled={!lastRecord || undoLoading}
-                className="rounded-full border border-white/10 bg-white/5 py-4 text-sm font-black tracking-[0.12em] text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {undoLoading ? '撤銷中...' : '↶ 撤銷'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleFinishRoom}
-                disabled={room.status === 'finished' || finishLoading}
-                className="rounded-full border border-amber-400/20 bg-amber-400/10 py-4 text-sm font-black tracking-[0.12em] text-amber-200 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {finishLoading ? '結束中...' : room.status === 'finished' ? '已結束' : '結束對局'}
-              </button>
-
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setIsRecordModalOpen(true)}
-                disabled={room.status === 'finished'}
-                className="col-span-2 rounded-full bg-[#B6FF00] py-5 text-base font-black tracking-[0.2em] text-black shadow-[0_15px_40px_rgba(182,255,0,0.3)] transition-all active:bg-[#D9FF7A] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                ＋ 紀錄此手結果
-              </motion.button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <section className="mx-auto max-w-4xl space-y-12 px-4 pb-52 pt-10 sm:px-6">
+      <section className="mx-auto max-w-4xl space-y-12 px-4 pb-44 pt-10 sm:px-6">
         <div className="flex items-center gap-4">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/10" />
           <span className="text-[10px] font-bold uppercase tracking-[0.5em] text-neutral-600">
@@ -751,6 +751,53 @@ export default function RoomPage() {
           <HandHistory records={records} players={players} />
         </div>
       </section>
+
+      {isOwner ? (
+        <div className="fixed bottom-8 left-0 right-0 z-40 flex justify-center px-6 sm:px-8">
+          <div className="w-full max-w-md">
+            {room.status === 'finished' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push('/')}
+                  className="rounded-full border border-white/10 bg-white/5 py-4 text-sm font-black tracking-[0.12em] text-white transition active:scale-[0.98]"
+                >
+                  ← 返回首頁
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveMatch}
+                  disabled={saveMatchLoading}
+                  className="rounded-full border border-cyan-400/20 bg-cyan-400/10 py-4 text-sm font-black tracking-[0.12em] text-cyan-200 transition active:scale-[0.98] disabled:opacity-40"
+                >
+                  {saveMatchLoading ? '保存中...' : '保存本場對局'}
+                </button>
+              </div>
+            ) : (
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setIsRecordModalOpen(true)}
+                className="w-full rounded-full bg-[#B6FF00] py-5 text-base font-black tracking-[0.2em] text-black shadow-[0_15px_40px_rgba(182,255,0,0.3)] transition-all active:bg-[#D9FF7A]"
+              >
+                ＋ 紀錄此手結果
+              </motion.button>
+            )}
+          </div>
+        </div>
+      ) : room.status === 'finished' ? (
+        <div className="fixed bottom-8 left-0 right-0 z-40 flex justify-center px-6 sm:px-8">
+          <div className="w-full max-w-md">
+            <button
+              type="button"
+              onClick={() => router.push('/')}
+              className="w-full rounded-full border border-white/10 bg-white/5 py-4 text-sm font-black tracking-[0.12em] text-white transition active:scale-[0.98]"
+            >
+              ← 返回首頁
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <AnimatePresence>
         {isRecordModalOpen && (
